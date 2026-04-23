@@ -47,8 +47,12 @@ HEAD_CAMERA_BODY_NAME = "head_camera_body"
 WAIST_CAMERA_BODY_NAME = "waist_camera_body"
 LEFT_WRIST_CAMERA_BODY_NAME = "left_wrist_camera_body"
 RIGHT_WRIST_CAMERA_BODY_NAME = "right_wrist_camera_body"
-CAMERA_HEIGHT = 256
-CAMERA_WIDTH = 256
+EXTERNAL_CAMERA_HEIGHT = 256
+EXTERNAL_CAMERA_WIDTH = 256
+WAIST_CAMERA_HEIGHT = 256
+WAIST_CAMERA_WIDTH = 256
+WRIST_CAMERA_HEIGHT = 400
+WRIST_CAMERA_WIDTH = 640
 CAMERA_RGB_CHANNELS = 3
 CAMERA_BODY_SIZE = (0.02, 0.05, 0.05)
 HEAD_CAMERA_BODY_COLOR = (0.95, 0.80, 0.20)
@@ -64,6 +68,14 @@ LEFT_WRIST_CAMERA_OFFSET_POS = (-0.045, 0.05, -0.05)
 RIGHT_WRIST_CAMERA_OFFSET_POS = (-0.045, 0.05, 0.05)
 LEFT_WRIST_CAMERA_OFFSET_ROT = (0.5, -0.5, 0.5, 0.5)
 RIGHT_WRIST_CAMERA_OFFSET_ROT = (0.0, -0.7071, 0.0, -0.7071)
+
+# Approximate RGB intrinsics for a wrist-mounted RealSense D405.
+# This task still exposes RGB only, but the image size, FOV, and
+# close-range clipping are moved closer to D405 behavior.
+D405_RGB_HORIZONTAL_APERTURE = 20.955
+D405_RGB_FOCAL_LENGTH = 11.3
+D405_NEAR_CLIP = 0.07
+D405_FAR_CLIP = 2.0
 
 # Keep the policy-facing observation key name "external_image", but remount
 # that camera onto the head near the mouth area instead of using a fixed
@@ -114,19 +126,19 @@ OBSERVATION_SPACE = gym.spaces.Dict(
         "observation/external_image": gym.spaces.Box(
             low=0,
             high=255,
-            shape=(CAMERA_HEIGHT, CAMERA_WIDTH, CAMERA_RGB_CHANNELS),
+            shape=(EXTERNAL_CAMERA_HEIGHT, EXTERNAL_CAMERA_WIDTH, CAMERA_RGB_CHANNELS),
             dtype=np.uint8,
         ),
         "observation/left_wrist_image": gym.spaces.Box(
             low=0,
             high=255,
-            shape=(CAMERA_HEIGHT, CAMERA_WIDTH, CAMERA_RGB_CHANNELS),
+            shape=(WRIST_CAMERA_HEIGHT, WRIST_CAMERA_WIDTH, CAMERA_RGB_CHANNELS),
             dtype=np.uint8,
         ),
         "observation/right_wrist_image": gym.spaces.Box(
             low=0,
             high=255,
-            shape=(CAMERA_HEIGHT, CAMERA_WIDTH, CAMERA_RGB_CHANNELS),
+            shape=(WRIST_CAMERA_HEIGHT, WRIST_CAMERA_WIDTH, CAMERA_RGB_CHANNELS),
             dtype=np.uint8,
         ),
         "observation/joint_pos": gym.spaces.Box(low=-np.inf, high=np.inf, shape=(ACTION_DIM,), dtype=np.float32),
