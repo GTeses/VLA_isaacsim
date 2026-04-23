@@ -1,0 +1,28 @@
+PROBE_BEGIN
+00 left_joint1 lower=-3.142 upper=+1.000 default=+0.000 current=+0.021
+01 left_joint2 lower=-1.000 upper=+3.140 default=+0.000 current=-0.040
+02 left_joint3 lower=-0.523 upper=+1.570 default=+0.000 current=-0.001
+03 left_joint4 lower=-1.570 upper=+0.523 default=+0.000 current=-0.039
+04 left_joint5 lower=-3.140 upper=+3.140 default=+0.000 current=-0.011
+05 left_joint6 lower=-3.140 upper=+3.140 default=+0.000 current=+0.025
+06 left_joint7 lower=+0.000 upper=+2.617 default=+0.000 current=+0.000
+07 right_joint1 lower=+0.000 upper=+2.617 default=+0.000 current=+0.000
+08 right_joint2 lower=-3.140 upper=+3.140 default=+0.000 current=-0.033
+09 right_joint3 lower=-3.140 upper=+3.140 default=+0.000 current=+0.032
+10 right_joint4 lower=-1.396 upper=+1.396 default=+0.000 current=+0.050
+11 right_joint5 lower=-1.396 upper=+1.396 default=+0.000 current=+0.033
+12 right_joint6 lower=-1.396 upper=+1.396 default=+0.000 current=+0.001
+13 right_joint7 lower=-1.396 upper=+1.396 default=+0.000 current=+0.042
+RESP arm=left joint=left_joint1 sign=+1 delta=(-0.0273,-0.0000,+0.0023) joint_pos=+0.057
+RESP arm=left joint=left_joint1 sign=-1 delta=(+0.0284,+0.0001,-0.0014) joint_pos=-0.036
+RESP arm=left joint=left_joint2 sign=+1 delta=(-0.0001,-0.0010,-0.0001) joint_pos=+0.029
+RESP arm=left joint=left_joint2 sign=-1 delta=(+0.0007,-0.0009,-0.0001) joint_pos=-0.015
+RESP arm=left joint=left_joint4 sign=+1 delta=(+0.0005,-0.0006,-0.0001) joint_pos=+0.008
+RESP arm=left joint=left_joint4 sign=-1 delta=(+0.0010,+0.0003,-0.0001) joint_pos=-0.015
+RESP arm=right joint=right_joint1 sign=+1 delta=(+0.0143,+0.0007,-0.0021) joint_pos=+0.087
+RESP arm=right joint=right_joint1 sign=-1 delta=(+0.0007,+0.0001,-0.0001) joint_pos=+0.001
+RESP arm=right joint=right_joint2 sign=+1 delta=(+0.0014,+0.0001,-0.0002) joint_pos=+0.070
+RESP arm=right joint=right_joint2 sign=-1 delta=(+0.0009,-0.0000,-0.0001) joint_pos=-0.101
+RESP arm=right joint=right_joint4 sign=+1 delta=(+0.0004,-0.0006,-0.0001) joint_pos=+0.060
+RESP arm=right joint=right_joint4 sign=-1 delta=(-0.0008,+0.0008,-0.0000) joint_pos=-0.085
+PROBE_END
