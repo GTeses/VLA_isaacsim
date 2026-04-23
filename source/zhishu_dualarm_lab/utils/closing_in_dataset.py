@@ -107,7 +107,11 @@ def sample_episode_spec(rng: np.random.Generator, episode_index: int, base_targe
     target_mode = str(rng.choice(["center", "symmetric"], p=[0.45, 0.55]))
     center_target = np.asarray(base_target, dtype=np.float32).copy()
     center_target[0] += float(rng.uniform(-0.12, 0.12))
-    center_target[1] += float(rng.uniform(-0.22, 0.22))
+    # Do not inherit the scene's default target-zone lateral bias here.
+    # For closing-in data we want targets to cover the tabletop middle band on
+    # both sides of the robot so we can distinguish posture failures from
+    # "the target just happened to sit on the left" artifacts.
+    center_target[1] = float(rng.uniform(-0.22, 0.22))
     center_target[2] += float(rng.uniform(-0.015, 0.035))
 
     if target_mode == "center":

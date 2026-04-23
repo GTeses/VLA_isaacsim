@@ -132,7 +132,8 @@ class ClosingInIKPolicy:
             speed_scale=spec.speed_scale,
             jitter_scale=spec.jitter_scale,
         )
-        right_action, _ = self._solve_arm(
+        _, right_joint_pos_des = self._solve_arm(
+        _, right_joint_pos_des = self._solve_arm(
             controller=self.right_controller,
             tcp_frame_idx=self.right_tcp_frame_idx,
             jacobi_body_idx=self.right_jacobi_body_idx,
@@ -142,6 +143,20 @@ class ClosingInIKPolicy:
             speed_scale=spec.speed_scale,
             jitter_scale=spec.jitter_scale,
         )
+        right_joint_pos_des = _apply_right_rollout_posture_bias(
+            self.env,
+            right_joint_pos_des,
+            spec=spec,
+        )
+        right_joint_pos = self.env._robot.data.joint_pos[:, self.right_joint_ids]
+        right_action = ((right_joint_pos_des - right_joint_pos) / self.delta_scale).clamp(-1.0, 1.0)
+        right_joint_pos_des = _apply_right_rollout_posture_bias(
+            self.env,
+            right_joint_pos_des,
+            spec=spec,
+        )
+        right_joint_pos = self.env._robot.data.joint_pos[:, self.right_joint_ids]
+        right_action = ((right_joint_pos_des - right_joint_pos) / self.delta_scale).clamp(-1.0, 1.0)
         return torch.cat([left_action, right_action], dim=-1).detach().cpu().numpy()
 
     def solve_joint_targets(self, *, left_target: np.ndarray, right_target: np.ndarray, speed_scale: float) -> torch.Tensor:
@@ -315,6 +330,8 @@ def _reinject_proximal_posture(
     *,
     left_blend: float,
     right_blend: float,
+    left_blend: float,
+    right_blend: float,
 ) -> torch.Tensor:
     """Blend shoulder/elbow joints back toward the sampled natural seed.
 
@@ -329,7 +346,13 @@ def _reinject_proximal_posture(
             (1.0 - left_blend) * blended[:, joint_idx] + left_blend * sampled_seed[joint_idx]
         )
     for joint_idx in RIGHT_PROXIMAL_LOCAL_IDS:
+    for joint_idx in LEFT_PROXIMAL_LOCAL_IDS:
         blended[:, joint_idx] = (
+            (1.0 - left_blend) * blended[:, joint_idx] + left_blend * sampled_seed[joint_idx]
+        )
+    for joint_idx in RIGHT_PROXIMAL_LOCAL_IDS:
+        blended[:, joint_idx] = (
+            (1.0 - right_blend) * blended[:, joint_idx] + right_blend * sampled_seed[joint_idx]
             (1.0 - right_blend) * blended[:, joint_idx] + right_blend * sampled_seed[joint_idx]
         )
     return blended
@@ -604,6 +627,8 @@ def _set_manual_scene_state(
         table_front_x=table_front_x,
         table_back_x=table_back_x,
     ):
+        env._closing_in_right_rollout_anchor = env._robot.data.joint_pos[:, env._arm_joint_ids[7:]].clone()
+        env._closing_in_right_rollout_anchor = env._robot.data.joint_pos[:, env._arm_joint_ids[7:]].clone()
         return
 
     raise RuntimeError(
