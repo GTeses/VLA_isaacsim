@@ -28,7 +28,7 @@ LOCKED_JOINT_NAMES = (
     "left_wheel_joint",
     "right_wheel_joint",
 )
-
+#123
 LEFT_TCP_LINK_NAME = "left_link7"
 RIGHT_TCP_LINK_NAME = "right_link7"
 HEAD_CAMERA_LINK_NAME = "head_P_link"
