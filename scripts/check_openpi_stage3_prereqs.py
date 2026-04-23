@@ -11,15 +11,20 @@ from __future__ import annotations
 import argparse
 import dataclasses
 from pathlib import Path
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT = REPO_ROOT / "source"
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
+
+from zhishu_dualarm_lab.utils.local_paths import resolve_openpi_checkpoint_roots, resolve_openpi_root
 
 
 @dataclasses.dataclass(frozen=True)
 class Args:
-    openpi_root: Path = Path("/home/mark/openpi")
-    checkpoint_roots: tuple[Path, ...] = (
-        Path("/home/mark/openpi/openpi-assets/checkpoints"),
-        Path("/home/mark/.cache/openpi/openpi-assets/checkpoints"),
-    )
+    openpi_root: Path = resolve_openpi_root()
+    checkpoint_roots: tuple[Path, ...] = resolve_openpi_checkpoint_roots()
 
 
 def _status_line(name: str, ok: bool, detail: str) -> str:

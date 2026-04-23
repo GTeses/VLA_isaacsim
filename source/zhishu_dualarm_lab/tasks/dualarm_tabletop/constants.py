@@ -4,6 +4,7 @@ from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
+from zhishu_dualarm_lab.utils.local_paths import resolve_robot_urdf_path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
@@ -12,9 +13,7 @@ PROJECT_NAME = "zhishu_dualarm_lab"
 ENV_ID = "Zhishu-DualArm-Tabletop-Direct-v0"
 POLICY_PROMPT = "Move both arms toward the cube and nudge it into the target zone without grasping."
 
-ROBOT_URDF_PATH = Path(
-    "/home/mark/zhishu_robot_description-URDF/zhishu_robot_description/urdf/zhishu_robot_description.urdf"
-)
+ROBOT_URDF_PATH = resolve_robot_urdf_path()
 ROBOT_USD_PATH = PACKAGE_ROOT / "assets/robots/zhishu_robot/usd/zhishu_robot.usd"
 
 LEFT_ARM_JOINT_NAMES = tuple(f"left_joint{i}" for i in range(1, 8))

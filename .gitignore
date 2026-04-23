@@ -6,3 +6,6 @@ __pycache__/
 # Local datasets and generated assets
 data/
 *.usd
+
+# Machine-local path overrides
+config/local_paths.json

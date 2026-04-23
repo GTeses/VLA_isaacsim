@@ -1,0 +1,8 @@
+{
+  "robot_urdf_path": "/home/yourname/zhishu_robot_description-URDF/zhishu_robot_description/urdf/zhishu_robot_description.urdf",
+  "openpi_root": "/home/yourname/openpi",
+  "openpi_checkpoint_roots": [
+    "/home/yourname/openpi/openpi-assets/checkpoints",
+    "/home/yourname/.cache/openpi/openpi-assets/checkpoints"
+  ]
+}

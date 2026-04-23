@@ -6,6 +6,9 @@ import numpy as np
 import torch
 from isaaclab.assets import Articulation, RigidObject
 from isaaclab.envs import DirectRLEnv
+from isaaclab.markers import VisualizationMarkers
+from isaaclab.markers.config import CUBOID_MARKER_CFG
+from isaaclab.utils.math import combine_frame_transforms
 from isaaclab.utils.math import sample_uniform
 
 from zhishu_dualarm_lab.utils.action_adapter import (
@@ -20,20 +23,33 @@ from .constants import (
     ACTION_PENALTY_SCALE,
     ARM_ACTION_DELTA_SCALE,
     ARM_JOINT_NAMES,
+    HEAD_CAMERA_LINK_NAME,
+    HEAD_CAMERA_OFFSET_POS,
+    HEAD_CAMERA_OFFSET_ROT,
+    CAMERA_BODY_SIZE,
     OBJECT_TARGET_PROGRESS_SCALE,
     OBJECT_TARGET_SHAPING_SCALE,
     JOINT_VELOCITY_SCALE,
+    LEFT_TCP_LINK_NAME,
     LEFT_TCP_NAME,
+    LEFT_WRIST_CAMERA_OFFSET_POS,
+    LEFT_WRIST_CAMERA_OFFSET_ROT,
     POLICY_PROMPT,
     REACH_SUCCESS_BONUS,
     RESET_JOINT_NOISE,
+    RIGHT_TCP_LINK_NAME,
     RIGHT_TCP_NAME,
+    RIGHT_WRIST_CAMERA_OFFSET_POS,
+    RIGHT_WRIST_CAMERA_OFFSET_ROT,
     TARGET_SUCCESS_BONUS,
     TARGET_REACHED_THRESHOLD,
     TCP_GATHER_SHAPING_SCALE,
     TCP_MIDPOINT_OBJECT_THRESHOLD,
     TCP_OBJECT_REACHED_THRESHOLD,
     TCP_OBJECT_SHAPING_SCALE,
+    WAIST_CAMERA_LINK_NAME,
+    WAIST_CAMERA_OFFSET_POS,
+    WAIST_CAMERA_OFFSET_ROT,
 )
 from .env_cfg import ZhishuDualArmTabletopEnvCfg
 
@@ -75,6 +91,13 @@ class ZhishuDualArmTabletopEnv(DirectRLEnv):
 
         self._left_tcp_idx = self._tcp_frames.data.target_frame_names.index(LEFT_TCP_NAME)
         self._right_tcp_idx = self._tcp_frames.data.target_frame_names.index(RIGHT_TCP_NAME)
+        self._head_camera_body_id = self._robot.find_bodies([HEAD_CAMERA_LINK_NAME])[0][0]
+        self._waist_camera_body_id = self._robot.find_bodies([WAIST_CAMERA_LINK_NAME])[0][0]
+        self._left_camera_body_id = self._robot.find_bodies([LEFT_TCP_LINK_NAME])[0][0]
+        self._right_camera_body_id = self._robot.find_bodies([RIGHT_TCP_LINK_NAME])[0][0]
+        marker_cfg = CUBOID_MARKER_CFG.replace(prim_path="/Visuals/ZhishuCameraBodies")
+        marker_cfg.markers["cuboid"].size = CAMERA_BODY_SIZE
+        self._camera_body_markers = VisualizationMarkers(marker_cfg)
 
         self._action_adapter = JointActionAdapter(JointActionAdapterCfg(delta_scale=ARM_ACTION_DELTA_SCALE))
         self._policy_action_adapter = PolicyActionChunkAdapter(action_dim=self.action_dim)
@@ -88,9 +111,52 @@ class ZhishuDualArmTabletopEnv(DirectRLEnv):
         self._object: RigidObject = self.scene["object"]
         self._target_zone: RigidObject = self.scene["target_zone"]
         self._external_camera = self.scene["external_camera"]
+        self._waist_camera = self.scene["waist_camera"]
         self._left_wrist_camera = self.scene["left_wrist_camera"]
         self._right_wrist_camera = self.scene["right_wrist_camera"]
         self._tcp_frames = self.scene["tcp_frames"]
+
+    def _camera_world_pose(
+        self,
+        *,
+        parent_body_id: int,
+        offset_pos: tuple[float, float, float],
+        offset_rot: tuple[float, float, float, float],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        parent_pos = self._robot.data.body_link_pos_w[:, parent_body_id]
+        parent_quat = self._robot.data.body_link_quat_w[:, parent_body_id]
+        offset_pos_tensor = torch.tensor(offset_pos, dtype=torch.float32, device=self.device).repeat(self.num_envs, 1)
+        offset_quat_tensor = torch.tensor(offset_rot, dtype=torch.float32, device=self.device).repeat(self.num_envs, 1)
+        return combine_frame_transforms(parent_pos, parent_quat, offset_pos_tensor, offset_quat_tensor)
+
+    def _sync_camera_mounts(self) -> None:
+        head_pos, head_quat = self._camera_world_pose(
+            parent_body_id=self._head_camera_body_id,
+            offset_pos=HEAD_CAMERA_OFFSET_POS,
+            offset_rot=HEAD_CAMERA_OFFSET_ROT,
+        )
+        waist_pos, waist_quat = self._camera_world_pose(
+            parent_body_id=self._waist_camera_body_id,
+            offset_pos=WAIST_CAMERA_OFFSET_POS,
+            offset_rot=WAIST_CAMERA_OFFSET_ROT,
+        )
+        left_pos, left_quat = self._camera_world_pose(
+            parent_body_id=self._left_camera_body_id,
+            offset_pos=LEFT_WRIST_CAMERA_OFFSET_POS,
+            offset_rot=LEFT_WRIST_CAMERA_OFFSET_ROT,
+        )
+        right_pos, right_quat = self._camera_world_pose(
+            parent_body_id=self._right_camera_body_id,
+            offset_pos=RIGHT_WRIST_CAMERA_OFFSET_POS,
+            offset_rot=RIGHT_WRIST_CAMERA_OFFSET_ROT,
+        )
+        self._external_camera.set_world_poses(positions=head_pos, orientations=head_quat, convention="world")
+        self._left_wrist_camera.set_world_poses(positions=left_pos, orientations=left_quat, convention="world")
+        self._right_wrist_camera.set_world_poses(positions=right_pos, orientations=right_quat, convention="world")
+        self._waist_camera.set_world_poses(positions=waist_pos, orientations=waist_quat, convention="world")
+        marker_pos = torch.cat([head_pos, waist_pos, left_pos, right_pos], dim=0)
+        marker_quat = torch.cat([head_quat, waist_quat, left_quat, right_quat], dim=0)
+        self._camera_body_markers.visualize(translations=marker_pos, orientations=marker_quat)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         # Convert normalized external actions into arm joint position targets.
@@ -111,6 +177,13 @@ class ZhishuDualArmTabletopEnv(DirectRLEnv):
         self._robot.set_joint_position_target(self._joint_targets)
 
     def _get_observations(self) -> dict:
+        # The imported robot articulation does not propagate moving body poses
+        # back to child USD prims, so wrist/head cameras are driven through
+        # explicit kinematic camera-body assets that follow the live body state.
+        self._sync_camera_mounts()
+        if self.sim.has_rtx_sensors():
+            self.sim.render()
+
         # FrameTransformer provides the TCP frames as virtual target frames,
         # which lets us change TCP offsets later without rewriting the rest
         # of the observation or task code.
