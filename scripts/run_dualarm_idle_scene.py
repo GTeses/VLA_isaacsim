@@ -30,6 +30,11 @@ def main() -> None:
         default=300,
         help="Print one heartbeat line every N idle steps.",
     )
+    parser.add_argument(
+        "--start_paused",
+        action="store_true",
+        help="Load the scene, then pause the Isaac Sim timeline until you press Play in the UI.",
+    )
     AppLauncher.add_app_launcher_args(parser)
     args = parser.parse_args()
     if hasattr(args, "enable_cameras"):
@@ -48,11 +53,21 @@ def main() -> None:
         cfg.scene.num_envs = args.num_envs
         env = ZhishuDualArmTabletopEnv(cfg=cfg, render_mode="human" if not args.headless else None)
         env.reset()
+        timeline = None
+        if args.start_paused:
+            import omni.timeline
+
+            timeline = omni.timeline.get_timeline_interface()
+            timeline.pause()
+            print("[INFO] scene loaded and timeline paused; open Physics Inspector, then press Play in Isaac Sim.")
 
         zero_action = torch.zeros((env.num_envs, env.action_dim), device=env.device)
         step_idx = 0
         print("[INFO] idle scene ready; stepping zero actions until you close the app or Ctrl-C.")
         while simulation_app.is_running():
+            if timeline is not None and not timeline.is_playing():
+                simulation_app.update()
+                continue
             env.step(zero_action)
             if args.log_every > 0 and step_idx % args.log_every == 0:
                 print(f"[INFO] idle step={step_idx}")

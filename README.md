@@ -2,6 +2,33 @@
 
 `zhishu_dualarm_lab` 是一个面向 Isaac Sim 5.1 + Isaac Lab 2.3.0 的外部项目骨架，用来跑“智书机器人上半身双臂桌面任务”的第一版最小原型。
 
+## 当前环境约定
+
+这份 README 已按当前机器上的实际目录布局整理，下面这些路径和约定默认成立：
+
+- 仓库根目录：`/root/gpufree-data/arcus/zhishu_dualarm_lab`
+- Isaac 运行环境：`conda activate isaaclab`
+- openpi 根目录：`/root/gpufree-data/arcus/openpi`
+- 当前仓库内所有 demo / script 都从仓库根目录直接运行
+- 当前机器优先使用激活环境后的 `python`，不要默认 `isaaclab.sh -p`
+
+本地路径解析的优先级当前是：
+
+- `ZHISHU_ROBOT_URDF`
+- `OPENPI_ROOT`
+- `OPENPI_CHECKPOINT_ROOTS`
+- `OPENPI_LOCAL_CHECKPOINT_ROOT`（兼容旧变量名）
+- `config/local_paths.json`
+
+首次使用时，建议先生成一份本地路径配置：
+
+```bash
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
+cp config/local_paths.example.json config/local_paths.json
+```
+
+当前 `config/local_paths.example.json` 已经对齐这台机器的默认目录，可直接作为起点。
+
 它当前的定位是：
 
 - 已经把“身体”装好：机器人资产、场景、控制、相机、环境接口都已经打通
@@ -34,7 +61,7 @@
   - `scripts/convert_zhishu_data_to_lerobot.py`
 - 当前机器上已确认：
   - `pi05_libero` 已在本地 cache
-  - `pi05_base` 已下载到 `/home/mark/openpi/openpi-assets/checkpoints/pi05_base`
+  - `pi05_base` 已下载到 `/root/gpufree-data/arcus/checkpoints/pi05_base`
   - 当前 `pi05_zhishu_dualarm_nohand` 已改成优先使用本地 `pi05_base`，找不到时才回退到 `gs://openpi-assets/checkpoints/pi05_base`
   - 所以第三阶段目前已经具备“代码脚手架 + 本地 base checkpoint + 数据转换入口”
   - 剩余 blocker 已经收缩为：真实 Zhishu 数据集生成、`compute_norm_stats`、fine-tuning 和新 checkpoint 验证
@@ -112,7 +139,7 @@
 
 - 真实 `openpi` server 已替换 fake server
 - 本地缓存 checkpoint 已成功加载：
-  `/home/mark/.cache/openpi/openpi-assets/checkpoints/pi05_libero`
+  `/root/.cache/openpi/openpi-assets/checkpoints/pi05_libero`
 - websocket 已成功连上真实 server
 - 真实 server 已返回 `dict["actions"]`
 - server 原始返回的动作 shape 是 `(10, 7)`
@@ -126,20 +153,20 @@
 注意：`tyro` 参数顺序有要求，`--port` 要放在主命令上，不能放在 `policy:checkpoint` 后面。
 
 ```bash
-cd /home/mark/openpi
+cd /root/gpufree-data/arcus/openpi
 source .venv/bin/activate
 uv run scripts/serve_policy.py --port 8000 policy:checkpoint \
   --policy.config=pi05_libero \
-  --policy.dir=/home/mark/.cache/openpi/openpi-assets/checkpoints/pi05_libero
+  --policy.dir=/root/.cache/openpi/openpi-assets/checkpoints/pi05_libero
 ```
 
 本次 server 端关键日志：
 
 ```text
 INFO:root:Loading model...
-INFO:absl:Restoring checkpoint from /home/mark/.cache/openpi/openpi-assets/checkpoints/pi05_libero/params.
-INFO:absl:Finished restoring checkpoint in 4.52 seconds from /home/mark/.cache/openpi/openpi-assets/checkpoints/pi05_libero/params.
-INFO:root:Loaded norm stats from /home/mark/.cache/openpi/openpi-assets/checkpoints/pi05_libero/assets/physical-intelligence/libero
+INFO:absl:Restoring checkpoint from /root/.cache/openpi/openpi-assets/checkpoints/pi05_libero/params.
+INFO:absl:Finished restoring checkpoint in 4.52 seconds from /root/.cache/openpi/openpi-assets/checkpoints/pi05_libero/params.
+INFO:root:Loaded norm stats from /root/.cache/openpi/openpi-assets/checkpoints/pi05_libero/assets/physical-intelligence/libero
 INFO:websockets.server:server listening on 0.0.0.0:8000
 ```
 
@@ -148,8 +175,8 @@ INFO:websockets.server:server listening on 0.0.0.0:8000
 注意：真实 `pi05_libero` 当前不能直接吃本地 native schema，也不能直接输出本地 `14` 维双臂动作，所以这次烟雾测试必须显式带上 `libero` / `libero7` 兼容参数。
 
 ```bash
-conda activate isaaclab-5.1
-cd /home/mark/zhishu_dualarm_lab
+conda activate isaaclab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python -u demos/run_dualarm_with_openpi.py \
   --policy_mode websocket \
   --policy_host 127.0.0.1 \
@@ -394,7 +421,8 @@ TrainConfig(
 - norm stats 来自 Zhishu 自己的数据
 - 输入输出 schema 来自 Zhishu 自己的 policy transform
 - 如需显式指定 checkpoint 根目录，可在运行前设置：
-  - `OPENPI_LOCAL_CHECKPOINT_ROOT=/home/mark/openpi/openpi-assets/checkpoints`
+  - `OPENPI_CHECKPOINT_ROOTS=/root/gpufree-data/arcus/checkpoints`
+  - `OPENPI_LOCAL_CHECKPOINT_ROOT=/root/gpufree-data/arcus/checkpoints` 仍可用，但只作为兼容旧变量名
 
 首版可先从这些超参数开始试：
 
@@ -478,10 +506,10 @@ zhishu_dualarm_lab/scripts/collect_zhishu_sim_data.py
 推荐先采一小批 scripted rollout：
 
 ```bash
-conda activate isaaclab-5.1
+conda activate isaaclab
 which python
 python -c "import isaaclab, isaacsim; print('ok')"
-cd /home/mark/zhishu_dualarm_lab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python scripts/collect_zhishu_sim_data.py \
   --policy_mode scripted \
   --policy_input_schema zhishu14 \
@@ -491,7 +519,7 @@ python scripts/collect_zhishu_sim_data.py \
   --num_episodes 20 \
   --max_steps 80 \
   --replan_steps 1 \
-  --output_dir /home/mark/zhishu_dualarm_lab/data/raw/zhishu_stage3_reach_push_v1
+  --output_dir /root/gpufree-data/arcus/zhishu_dualarm_lab/data/raw/zhishu_stage3_reach_push_v1
 ```
 
 如果你想记录 websocket policy rollout，也可以把 `--policy_mode` 切成 `websocket`，但长期训练主线仍建议优先围绕 `zhishu14` native contract 采数据，不要继续放大 `libero7 -> 14` 临时桥接的比重。
@@ -508,9 +536,9 @@ python scripts/collect_zhishu_sim_data.py \
 可直接参考：
 
 ```bash
-cd /home/mark/zhishu_dualarm_lab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python scripts/convert_zhishu_data_to_lerobot.py \
-  --raw_dir /home/mark/zhishu_dualarm_lab/data/raw/zhishu_stage3_reach_push_v1 \
+  --raw_dir /root/gpufree-data/arcus/zhishu_dualarm_lab/data/raw/zhishu_stage3_reach_push_v1 \
   --repo_id <your_hf_username/zhishu_dualarm_nohand>
 ```
 
@@ -610,16 +638,16 @@ dataset.hdf5
 推荐先录一个可视化小样本：
 
 ```bash
-conda activate isaaclab-5.1
+conda activate isaaclab
 which python
 python -c "import isaaclab, isaacsim; print('ok')"
-cd /home/mark/zhishu_dualarm_lab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python scripts/collect_closing_in_data.py \
   --enable_cameras \
   --num_episodes 8 \
   --max_steps 80 \
   --warmup_steps 5 \
-  --dataset_file /home/mark/zhishu_dualarm_lab/data/hdf5/zhishu_closing_in_smoke.hdf5
+  --dataset_file /root/gpufree-data/arcus/zhishu_dualarm_lab/data/hdf5/zhishu_closing_in_smoke.hdf5
 ```
 
 如果想关掉 GUI 再批量录制，再加 `--headless`。
@@ -627,22 +655,22 @@ python scripts/collect_closing_in_data.py \
 录完以后先回放，不要直接拿去训练：
 
 ```bash
-conda activate isaaclab-5.1
+conda activate isaaclab
 which python
 python -c "import isaaclab, isaacsim; print('ok')"
-cd /home/mark/zhishu_dualarm_lab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python scripts/replay_closing_in_hdf5.py \
   --enable_cameras \
-  --dataset_file /home/mark/zhishu_dualarm_lab/data/hdf5/zhishu_closing_in_smoke.hdf5 \
+  --dataset_file /root/gpufree-data/arcus/zhishu_dualarm_lab/data/hdf5/zhishu_closing_in_smoke.hdf5 \
   --select_episodes 0 1 2
 ```
 
 如果回放确认轨迹语义稳定，再转 LeRobot：
 
 ```bash
-cd /home/mark/zhishu_dualarm_lab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python scripts/convert_zhishu_sim_to_lerobot.py \
-  --dataset_file /home/mark/zhishu_dualarm_lab/data/hdf5/zhishu_closing_in_smoke.hdf5 \
+  --dataset_file /root/gpufree-data/arcus/zhishu_dualarm_lab/data/hdf5/zhishu_closing_in_smoke.hdf5 \
   --repo_id <your_hf_username>/zhishu_closing_in_v0 \
   --successful_only
 ```
@@ -663,10 +691,10 @@ zhishu_dualarm_lab/scripts/probe_zhishu_joint_tcp_response.py
 它会固定初始位姿，逐个关节给正负小动作，打印 TCP 在世界坐标系下的位移：
 
 ```bash
-conda activate isaaclab-5.1
+conda activate isaaclab
 which python
 python -c "import isaaclab, isaacsim; print('ok')"
-cd /home/mark/zhishu_dualarm_lab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python scripts/probe_zhishu_joint_tcp_response.py \
   --arm left \
   --enable_cameras
@@ -693,22 +721,22 @@ zhishu_dualarm_lab/scripts/check_openpi_stage3_prereqs.py
 - 本地 `pi05_libero`
 - 本地 `pi05_base`
 - 当前会按顺序搜索：
-  - `/home/mark/openpi/openpi-assets/checkpoints`
-  - `/home/mark/.cache/openpi/openpi-assets/checkpoints`
+  - `/root/gpufree-data/arcus/checkpoints`
+  - `/root/.cache/openpi/openpi-assets/checkpoints`
 
 可直接参考：
 
 ```bash
-cd /home/mark/zhishu_dualarm_lab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python scripts/check_openpi_stage3_prereqs.py
 ```
 
 如果需要额外 checkpoint 根目录，也可以显式追加：
 
 ```bash
-cd /home/mark/zhishu_dualarm_lab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python scripts/check_openpi_stage3_prereqs.py \
-  --checkpoint_root /home/mark/openpi/openpi-assets/checkpoints
+  --checkpoint_root /root/gpufree-data/arcus/checkpoints
 ```
 
 当前这台机器上，`pi05_base` 已经在本地，所以“开始 fine-tuning”的前置条件不再是 checkpoint，而是 Zhishu 数据集和 norm stats。
@@ -728,9 +756,10 @@ python scripts/check_openpi_stage3_prereqs.py \
 可直接参考的命令形态：
 
 ```bash
-cd /home/mark/openpi
+cd /root/gpufree-data/arcus/openpi
 source .venv/bin/activate
-export OPENPI_LOCAL_CHECKPOINT_ROOT=/home/mark/openpi/openpi-assets/checkpoints
+export OPENPI_LOCAL_CHECKPOINT_ROOT=/root/gpufree-data/arcus/checkpoints
+export OPENPI_CHECKPOINT_ROOTS=/root/gpufree-data/arcus/checkpoints
 uv run scripts/compute_norm_stats.py --config-name pi05_zhishu_dualarm_nohand
 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run scripts/train.py pi05_zhishu_dualarm_nohand --exp-name=<exp_name> --overwrite
 uv run scripts/serve_policy.py --port 8000 policy:checkpoint \
@@ -741,8 +770,8 @@ uv run scripts/serve_policy.py --port 8000 policy:checkpoint \
 等 Zhishu checkpoint 真训练出来以后，Isaac 侧应切回长期 `zhishu14` contract：
 
 ```bash
-conda activate isaaclab-5.1
-cd /home/mark/zhishu_dualarm_lab
+conda activate isaaclab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python -u demos/run_dualarm_with_openpi.py \
   --policy_mode websocket \
   --policy_host 127.0.0.1 \
@@ -758,7 +787,7 @@ python -u demos/run_dualarm_with_openpi.py \
 先确认当前 shell 已经进入这台机器上已验证可用的环境：
 
 ```bash
-conda activate isaaclab-5.1
+conda activate isaaclab
 which python
 python -c "import isaaclab, isaacsim; print('env ok')"
 ```
@@ -766,7 +795,7 @@ python -c "import isaaclab, isaacsim; print('env ok')"
 如果 `which python` 不是：
 
 ```bash
-/home/mark/miniconda3/envs/isaaclab-5.1/bin/python
+/opt/conda/envs/isaaclab/bin/python
 ```
 
 就不要继续执行下面的命令。
@@ -927,12 +956,12 @@ python -c "import isaaclab, isaacsim; print('env ok')"
 
 ## 安装
 
-在已激活的 `isaaclab-5.1` 环境里安装本项目：
+在已激活的 `isaaclab` 环境里安装本项目：
 
 ```bash
-conda activate isaaclab-5.1
-cd /home/mark/zhishu_dualarm_lab
-python -m pip install -e source/zhishu_dualarm_lab
+conda activate isaaclab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
+python -m pip install -e .
 ```
 
 这里使用的是 external project 方式。
@@ -948,21 +977,21 @@ python -m pip install -e source/zhishu_dualarm_lab
 机器人原始 URDF：
 
 ```bash
-/home/mark/zhishu_robot_description-URDF/zhishu_robot_description/urdf/zhishu_robot_description.urdf
+/root/gpufree-data/arcus/zhishu_robot_description-URDF/zhishu_robot_description/urdf/zhishu_robot_description.urdf
 ```
 
 将其一次性导入到项目资产目录：
 
 ```bash
-conda activate isaaclab-5.1
-cd /home/mark/zhishu_dualarm_lab
+conda activate isaaclab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python scripts/import_zhishu_robot_usd.py --headless
 ```
 
 导入后的默认 USD 路径：
 
 ```bash
-/home/mark/zhishu_dualarm_lab/source/zhishu_dualarm_lab/assets/robots/zhishu_robot/usd/zhishu_robot.usd
+/root/gpufree-data/arcus/zhishu_dualarm_lab/source/zhishu_dualarm_lab/assets/robots/zhishu_robot/usd/zhishu_robot.usd
 ```
 
 说明：
@@ -974,16 +1003,16 @@ python scripts/import_zhishu_robot_usd.py --headless
 ## 运行 demo
 
 ```bash
-conda activate isaaclab-5.1
-cd /home/mark/zhishu_dualarm_lab
+conda activate isaaclab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python demos/run_dualarm_tabletop.py --enable_cameras
 ```
 
 如果要纯离屏渲染：
 
 ```bash
-conda activate isaaclab-5.1
-cd /home/mark/zhishu_dualarm_lab
+conda activate isaaclab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python demos/run_dualarm_tabletop.py --enable_cameras --headless
 ```
 
@@ -1146,8 +1175,8 @@ env observation
 先只验证 action buffer / replan / env action 链路：
 
 ```bash
-conda activate isaaclab-5.1
-cd /home/mark/zhishu_dualarm_lab
+conda activate isaaclab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python demos/run_dualarm_with_openpi.py --policy_mode fake --enable_cameras --replan_steps 8
 ```
 
@@ -1156,16 +1185,16 @@ python demos/run_dualarm_with_openpi.py --policy_mode fake --enable_cameras --re
 如果你要连通真实 websocket 收发，但又不想先依赖真实 π0.5 checkpoint，可以先启动一个 openpi-compatible fake server：
 
 ```bash
-conda activate isaaclab-5.1
-cd /home/mark/zhishu_dualarm_lab
+conda activate isaaclab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python scripts/serve_fake_policy.py --host 127.0.0.1 --port 8000 --chunk_length 8
 ```
 
 然后再跑 websocket client demo：
 
 ```bash
-conda activate isaaclab-5.1
-cd /home/mark/zhishu_dualarm_lab
+conda activate isaaclab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python demos/run_dualarm_with_openpi.py \
   --policy_mode websocket \
   --policy_host 127.0.0.1 \
@@ -1181,17 +1210,17 @@ python demos/run_dualarm_with_openpi.py \
 启动 server 的推荐命令是：
 
 ```bash
-cd /home/mark/openpi
+cd /root/gpufree-data/arcus/openpi
 source .venv/bin/activate
 uv run scripts/serve_policy.py --port 8000 policy:checkpoint \
   --policy.config=pi05_libero \
-  --policy.dir=/home/mark/.cache/openpi/openpi-assets/checkpoints/pi05_libero
+  --policy.dir=/root/.cache/openpi/openpi-assets/checkpoints/pi05_libero
 ```
 
 如果你想使用 openpi 默认环境 policy，也可以使用：
 
 ```bash
-cd /home/mark/openpi
+cd /root/gpufree-data/arcus/openpi
 source .venv/bin/activate
 uv run scripts/serve_policy.py --env LIBERO --port 8000
 ```
@@ -1199,8 +1228,8 @@ uv run scripts/serve_policy.py --env LIBERO --port 8000
 然后在 Isaac 侧连接：
 
 ```bash
-conda activate isaaclab-5.1
-cd /home/mark/zhishu_dualarm_lab
+conda activate isaaclab
+cd /root/gpufree-data/arcus/zhishu_dualarm_lab
 python demos/run_dualarm_with_openpi.py \
   --policy_mode websocket \
   --policy_host 127.0.0.1 \

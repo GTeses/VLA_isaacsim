@@ -9,3 +9,6 @@ data/
 
 # Machine-local path overrides
 config/local_paths.json
+
+third_party/
+tmp/
