@@ -1,0 +1,8 @@
+# Python cache / build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Local datasets and generated assets
+data/
+*.usd
