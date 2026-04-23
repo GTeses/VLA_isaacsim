@@ -31,106 +31,40 @@ SOURCE_ROOT = Path(__file__).resolve().parents[1] / "source"
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
-SAFE_TABLETOP_HOME_ARM_JOINT_POSES = (
-    np.array(
-        [
-            -1.05,
-            0.22,
-            -0.03,
-            0.88,
-            0.08,
-            0.02,
-            0.03,
-            1.05,
-            -0.22,
-            0.03,
-            0.88,
-            -0.08,
-            -0.02,
-            -0.03,
-        ],
-        dtype=np.float32,
-    ),
-    np.array(
-        [
-            -0.92,
-            0.35,
-            0.00,
-            0.72,
-            0.12,
-            0.05,
-            0.05,
-            0.92,
-            -0.35,
-            0.00,
-            0.72,
-            -0.12,
-            -0.05,
-            -0.05,
-        ],
-        dtype=np.float32,
-    ),
-    np.array(
-        [
-            -1.18,
-            0.12,
-            -0.05,
-            1.02,
-            0.04,
-            -0.03,
-            0.01,
-            1.18,
-            -0.12,
-            0.05,
-            1.02,
-            -0.04,
-            0.03,
-            -0.01,
-        ],
-        dtype=np.float32,
-    ),
-    np.array(
-        [
-            -0.85,
-            0.18,
-            -0.02,
-            0.60,
-            0.16,
-            0.08,
-            0.08,
-            0.85,
-            -0.18,
-            0.02,
-            0.60,
-            -0.16,
-            -0.08,
-            -0.08,
-        ],
-        dtype=np.float32,
-    ),
-    np.array(
-        [
-            -1.12,
-            0.30,
-            -0.04,
-            0.92,
-            0.02,
-            -0.06,
-            0.02,
-            1.12,
-            -0.30,
-            0.04,
-            0.92,
-            -0.02,
-            0.06,
-            -0.02,
-        ],
-        dtype=np.float32,
-    ),
+# The original URDF is only globally mirrored. The two arms are not a
+# "copy/paste with one sign flipped" pair:
+# - left_joint1 limit = [-pi, 1.0], right_joint1 = [-1.0, pi]
+# - left_joint2 limit = [-0.523, 1.57], right_joint2 = [-1.57, 0.523]
+# - several joint origins/rpy are mirrored but not numerically identical
+# Safe-start therefore uses independent tabletop templates for each arm instead
+# of forcing the right arm to inherit a left-arm-shaped posture prior.
+LEFT_SAFE_TABLETOP_HOME_POSES = (
+    np.array([-0.95, 0.00, 0.28, 0.00, 0.05, 0.00, 0.55], dtype=np.float32),
+    np.array([-1.15, 0.05, 0.40, -0.05, 0.08, 0.00, 0.80], dtype=np.float32),
+    np.array([-0.75, -0.05, 0.18, 0.02, -0.05, 0.02, 0.35], dtype=np.float32),
+    np.array([-1.05, 0.00, 0.48, -0.10, 0.12, -0.05, 0.95], dtype=np.float32),
+    np.array([-0.88, 0.03, 0.32, 0.04, 0.00, 0.06, 0.68], dtype=np.float32),
 )
 
-LEFT_PROXIMAL_LOCAL_IDS = (0, 1, 3, 4)
+RIGHT_SAFE_TABLETOP_HOME_POSES = (
+    np.array([1.42, -0.12, -0.08, 1.12, -0.30, 0.16, 0.00], dtype=np.float32),
+    np.array([1.56, -0.04, -0.16, 1.26, -0.18, 0.10, 0.02], dtype=np.float32),
+    np.array([1.30, -0.18, -0.04, 1.02, -0.42, 0.18, -0.02], dtype=np.float32),
+    np.array([1.70, 0.02, -0.22, 1.34, -0.10, 0.04, 0.04], dtype=np.float32),
+    np.array([1.48, -0.08, -0.12, 1.18, -0.24, 0.14, -0.04], dtype=np.float32),
+)
+
+# Left-arm posture anchoring can stay close to the earlier probe result because
+# the left side already looks broadly natural. On the right side, however, the
+# visually important "shoulder + elbow" appearance depends much more on
+# right_joint2/right_joint4 than on the earlier probe-only set. Keep the right
+# arm anchored on the joints that actually determine whether it looks lifted and
+# tabletop-ready, not just on the joints that happened to move the TCP most.
+LEFT_PROXIMAL_LOCAL_IDS = (0, 2, 6)
 RIGHT_PROXIMAL_LOCAL_IDS = (7, 8, 10, 11)
+
+LEFT_SAFE_CHAIN_LINK_NAMES = ("left_link3", "left_link5")
+RIGHT_SAFE_CHAIN_LINK_NAMES = ("right_link3", "right_link5")
 
 
 def _clip_xyz_step(err: torch.Tensor, max_norm: float) -> torch.Tensor:
@@ -198,7 +132,8 @@ class ClosingInIKPolicy:
             speed_scale=spec.speed_scale,
             jitter_scale=spec.jitter_scale,
         )
-        right_action, _ = self._solve_arm(
+        _, right_joint_pos_des = self._solve_arm(
+        _, right_joint_pos_des = self._solve_arm(
             controller=self.right_controller,
             tcp_frame_idx=self.right_tcp_frame_idx,
             jacobi_body_idx=self.right_jacobi_body_idx,
@@ -208,6 +143,20 @@ class ClosingInIKPolicy:
             speed_scale=spec.speed_scale,
             jitter_scale=spec.jitter_scale,
         )
+        right_joint_pos_des = _apply_right_rollout_posture_bias(
+            self.env,
+            right_joint_pos_des,
+            spec=spec,
+        )
+        right_joint_pos = self.env._robot.data.joint_pos[:, self.right_joint_ids]
+        right_action = ((right_joint_pos_des - right_joint_pos) / self.delta_scale).clamp(-1.0, 1.0)
+        right_joint_pos_des = _apply_right_rollout_posture_bias(
+            self.env,
+            right_joint_pos_des,
+            spec=spec,
+        )
+        right_joint_pos = self.env._robot.data.joint_pos[:, self.right_joint_ids]
+        right_action = ((right_joint_pos_des - right_joint_pos) / self.delta_scale).clamp(-1.0, 1.0)
         return torch.cat([left_action, right_action], dim=-1).detach().cpu().numpy()
 
     def solve_joint_targets(self, *, left_target: np.ndarray, right_target: np.ndarray, speed_scale: float) -> torch.Tensor:
@@ -279,10 +228,29 @@ def _disable_default_task_success(env) -> None:
     env._get_dones = types.MethodType(_collector_dones, env)
 
 
+def _get_safe_chain_body_ids(env) -> dict[str, tuple[int, ...]]:
+    """Resolve and cache the arm-link ids used for tabletop-safe start checks."""
+
+    if not hasattr(env, "_closing_in_safe_chain_body_ids"):
+        left_ids = env._robot.find_bodies(list(LEFT_SAFE_CHAIN_LINK_NAMES))[0]
+        right_ids = env._robot.find_bodies(list(RIGHT_SAFE_CHAIN_LINK_NAMES))[0]
+        env._closing_in_safe_chain_body_ids = {
+            "left": tuple(int(i) for i in left_ids),
+            "right": tuple(int(i) for i in right_ids),
+        }
+    return env._closing_in_safe_chain_body_ids
+
+
 def _is_safe_tcp_start(env, *, table_top_z: float, table_front_x: float, table_back_x: float) -> bool:
     left_tcp = env._tcp_frames.data.target_pos_w[0, env._left_tcp_idx]
     right_tcp = env._tcp_frames.data.target_pos_w[0, env._right_tcp_idx]
+    safe_chain_body_ids = _get_safe_chain_body_ids(env)
+    left_chain_ids = safe_chain_body_ids["left"]
+    right_chain_ids = safe_chain_body_ids["right"]
+    left_chain_pos = env._robot.data.body_link_pos_w[0, list(left_chain_ids)]
+    right_chain_pos = env._robot.data.body_link_pos_w[0, list(right_chain_ids)]
     min_clearance_z = table_top_z + 0.06
+    min_chain_z = table_top_z + 0.02
     # "Safe start" should mean "clearly above the tabletop and not hidden deep
     # behind the robot", not "already fully inside the table workspace". The
     # closing-in rollout itself will move the arms forward. Requiring both TCPs
@@ -292,6 +260,8 @@ def _is_safe_tcp_start(env, *, table_top_z: float, table_front_x: float, table_b
     return bool(
         (left_tcp[2] > min_clearance_z)
         and (right_tcp[2] > min_clearance_z)
+        and torch.all(left_chain_pos[:, 2] > min_chain_z)
+        and torch.all(right_chain_pos[:, 2] > min_chain_z)
         and (left_tcp[0] > min_forward_x)
         and (right_tcp[0] > min_forward_x)
         and (left_tcp[0] < max_forward_x)
@@ -299,7 +269,10 @@ def _is_safe_tcp_start(env, *, table_top_z: float, table_front_x: float, table_b
     )
 
 
-def _sample_safe_home_joint_pos(env, rng: np.random.Generator) -> tuple[torch.Tensor, torch.Tensor, int]:
+def _sample_safe_home_joint_pos(
+    env,
+    rng: np.random.Generator,
+) -> tuple[torch.Tensor, torch.Tensor, int, int]:
     """Sample a tabletop-safe start pose from a small library of natural seeds.
 
     A single home seed made the IK settle into nearly identical shoulder/elbow
@@ -308,47 +281,57 @@ def _sample_safe_home_joint_pos(env, rng: np.random.Generator) -> tuple[torch.Te
     """
 
     joint_pos = env._robot.data.joint_pos.clone()
-    seed_index = int(rng.integers(0, len(SAFE_TABLETOP_HOME_ARM_JOINT_POSES)))
-    base = torch.as_tensor(SAFE_TABLETOP_HOME_ARM_JOINT_POSES[seed_index], dtype=torch.float32, device=env.device)
-    # Mirror-aware noise matters more than "same noise for both sides". The
-    # shoulder and upper-arm joints do not use the same sign convention across
-    # the two arms, so adding the same delta to both sides pushes one arm
-    # forward while pulling the other arm backward.
+    left_seed_index = int(rng.integers(0, len(LEFT_SAFE_TABLETOP_HOME_POSES)))
+    right_seed_index = int(rng.integers(0, len(RIGHT_SAFE_TABLETOP_HOME_POSES)))
+    left_base = torch.as_tensor(LEFT_SAFE_TABLETOP_HOME_POSES[left_seed_index], dtype=torch.float32, device=env.device)
+    right_base = torch.as_tensor(RIGHT_SAFE_TABLETOP_HOME_POSES[right_seed_index], dtype=torch.float32, device=env.device)
+    # Use the live Isaac probe result rather than assumed URDF semantics:
+    # around reset, the main visible posture levers are left {0, 2, 6} and
+    # right {7, 9, 11}. Sample around those directly so safe-start diversity
+    # shows up in the shoulder/upper-arm chain instead of only in joints that
+    # barely move the TCP.
     left_noise = np.array(
         [
-            rng.uniform(-0.12, 0.12),
-            rng.uniform(-0.08, 0.12),
-            rng.uniform(-0.05, 0.05),
             rng.uniform(-0.18, 0.18),
+            rng.uniform(-0.04, 0.04),
+            rng.uniform(-0.22, 0.22),
             rng.uniform(-0.06, 0.06),
-            rng.uniform(-0.08, 0.08),
-            rng.uniform(-0.05, 0.05),
+            rng.uniform(-0.06, 0.06),
+            rng.uniform(-0.06, 0.06),
+            rng.uniform(-0.32, 0.32),
         ],
         dtype=np.float32,
     )
+    # Right-arm noise stays narrower around the tabletop templates because the
+    # URDF's asymmetric joint1/joint2 limits make it much easier to fall into a
+    # low tucked-under-table branch if we perturb too aggressively.
     right_noise = np.array(
         [
-            -left_noise[0] + rng.uniform(-0.04, 0.04),
-            -left_noise[1] + rng.uniform(-0.04, 0.04),
-            -left_noise[2] + rng.uniform(-0.03, 0.03),
-            left_noise[3] + rng.uniform(-0.05, 0.05),
-            -left_noise[4] + rng.uniform(-0.03, 0.03),
-            -left_noise[5] + rng.uniform(-0.04, 0.04),
-            -left_noise[6] + rng.uniform(-0.03, 0.03),
+            rng.uniform(-0.12, 0.12),
+            rng.uniform(-0.12, 0.12),
+            rng.uniform(-0.08, 0.08),
+            rng.uniform(-0.06, 0.06),
+            rng.uniform(-0.15, 0.15),
+            rng.uniform(-0.04, 0.04),
+            rng.uniform(-0.04, 0.04),
         ],
         dtype=np.float32,
     )
     noise = torch.as_tensor(np.concatenate([left_noise, right_noise]), dtype=torch.float32, device=env.device)
+    base = torch.cat([left_base, right_base], dim=0)
     sampled = torch.clamp(base + noise, env._joint_lower_limits, env._joint_upper_limits)
     joint_pos[0, env._arm_joint_ids] = sampled
-    return joint_pos, sampled.clone(), seed_index
+    return joint_pos, sampled.clone(), left_seed_index, right_seed_index
 
 
 def _reinject_proximal_posture(
     current_joint_pos: torch.Tensor,
     sampled_seed: torch.Tensor,
     *,
-    blend: float,
+    left_blend: float,
+    right_blend: float,
+    left_blend: float,
+    right_blend: float,
 ) -> torch.Tensor:
     """Blend shoulder/elbow joints back toward the sampled natural seed.
 
@@ -358,11 +341,100 @@ def _reinject_proximal_posture(
     """
 
     blended = current_joint_pos.clone()
-    for joint_idx in LEFT_PROXIMAL_LOCAL_IDS + RIGHT_PROXIMAL_LOCAL_IDS:
+    for joint_idx in LEFT_PROXIMAL_LOCAL_IDS:
         blended[:, joint_idx] = (
-            (1.0 - blend) * blended[:, joint_idx] + blend * sampled_seed[joint_idx]
+            (1.0 - left_blend) * blended[:, joint_idx] + left_blend * sampled_seed[joint_idx]
+        )
+    for joint_idx in RIGHT_PROXIMAL_LOCAL_IDS:
+    for joint_idx in LEFT_PROXIMAL_LOCAL_IDS:
+        blended[:, joint_idx] = (
+            (1.0 - left_blend) * blended[:, joint_idx] + left_blend * sampled_seed[joint_idx]
+        )
+    for joint_idx in RIGHT_PROXIMAL_LOCAL_IDS:
+        blended[:, joint_idx] = (
+            (1.0 - right_blend) * blended[:, joint_idx] + right_blend * sampled_seed[joint_idx]
+            (1.0 - right_blend) * blended[:, joint_idx] + right_blend * sampled_seed[joint_idx]
         )
     return blended
+
+
+def _lift_right_arm_out_of_table(
+    joint_pos_des: torch.Tensor,
+    env,
+) -> torch.Tensor:
+    """Bias the right arm toward a higher, more forward tabletop branch.
+
+    The current articulation consistently falls into a low right-arm branch
+    during safe-start. Use a small joint-space bias on the empirically active
+    right-arm joints before writing targets to sim.
+    """
+
+    adjusted = joint_pos_des.clone()
+    right = adjusted[:, env._arm_joint_ids[7:]]
+    # Explicitly lift the visually important shoulder/elbow chain.
+    right[:, 0] = torch.clamp(right[:, 0] + 0.18, env._joint_lower_limits[7], env._joint_upper_limits[7])
+    right[:, 1] = torch.clamp(right[:, 1] + 0.20, env._joint_lower_limits[8], env._joint_upper_limits[8])
+    right[:, 3] = torch.clamp(right[:, 3] + 0.22, env._joint_lower_limits[10], env._joint_upper_limits[10])
+    right[:, 4] = torch.clamp(right[:, 4] - 0.14, env._joint_lower_limits[11], env._joint_upper_limits[11])
+    adjusted[:, env._arm_joint_ids[7:]] = right
+    return adjusted
+
+
+def _drive_right_arm_to_tabletop_template(
+    env,
+    current_joint_pos: torch.Tensor,
+    sampled_seed: torch.Tensor,
+    *,
+    steps: int = 12,
+) -> torch.Tensor:
+    """Hard-reset the right arm toward a tabletop-safe joint template.
+
+    The right arm repeatedly falls into a low IK branch even when its target TCP
+    is above the table. When that happens, stop asking IK to discover the
+    tabletop posture on its own; directly interpolate the right-arm joints back
+    toward the sampled tabletop seed, with a small extra lift bias on the main
+    active joints.
+    """
+
+    target = current_joint_pos.clone()
+    right_target = sampled_seed[7:].clone()
+    # Do not trust the noisy sampled seed for the right arm once we already
+    # know it collapsed into the low branch. Snap it toward a more explicit
+    # tabletop posture: higher shoulder yaw, a much less tucked shoulder-2, a
+    # clearly bent main elbow joint, and a less tucked wrist chain.
+    tabletop_template = torch.tensor(
+        [1.60, -0.02, -0.10, 1.38, -0.16, 0.20, 0.00],
+        dtype=torch.float32,
+        device=env.device,
+    )
+    right_target = 0.25 * right_target + 0.75 * tabletop_template
+    right_target[0] = torch.clamp(right_target[0], env._joint_lower_limits[7], env._joint_upper_limits[7])
+    right_target[1] = torch.clamp(right_target[1], env._joint_lower_limits[8], env._joint_upper_limits[8])
+    right_target[2] = torch.clamp(right_target[2], env._joint_lower_limits[9], env._joint_upper_limits[9])
+    right_target[3] = torch.clamp(right_target[3], env._joint_lower_limits[10], env._joint_upper_limits[10])
+    right_target[4] = torch.clamp(right_target[4], env._joint_lower_limits[11], env._joint_upper_limits[11])
+    right_target[5] = torch.clamp(right_target[5], env._joint_lower_limits[12], env._joint_upper_limits[12])
+    right_target[6] = torch.clamp(right_target[6], env._joint_lower_limits[13], env._joint_upper_limits[13])
+    target[:, env._arm_joint_ids[7:]] = right_target
+
+    env_ids = torch.tensor([0], device=env.device, dtype=torch.long)
+    zero_action = torch.zeros((env.num_envs, env.action_dim), device=env.device)
+    start = current_joint_pos.clone()
+    for alpha in torch.linspace(0.15, 1.0, steps, device=env.device):
+        blended = start.clone()
+        blended[:, env._arm_joint_ids[7:]] = (
+            (1.0 - alpha) * start[:, env._arm_joint_ids[7:]]
+            + alpha * target[:, env._arm_joint_ids[7:]]
+        )
+        blended[:, env._arm_joint_ids[7:]] = torch.clamp(
+            blended[:, env._arm_joint_ids[7:]],
+            env._joint_lower_limits[7:],
+            env._joint_upper_limits[7:],
+        )
+        env._robot.set_joint_position_target(blended, env_ids=env_ids)
+        env._joint_targets[:] = blended
+        env.step(zero_action)
+    return env._robot.data.joint_pos.clone()
 
 
 def _sample_start_tcp_targets(
@@ -399,8 +471,9 @@ def _sample_start_tcp_targets(
         right_start[1] -= extra_outward
 
     lift = float(rng.uniform(0.03, 0.08))
+    right_extra_lift = float(rng.uniform(0.08, 0.14))
     left_start[2] = max(left_start[2] + lift, table_top_z + 0.12)
-    right_start[2] = max(right_start[2] + lift, table_top_z + 0.12)
+    right_start[2] = max(right_start[2] + lift + right_extra_lift, table_top_z + 0.20)
 
     min_x = table_front_x + 0.04
     max_x = table_back_x - 0.14
@@ -446,7 +519,7 @@ def _set_manual_scene_state(
     env._last_action[:] = 0.0
     env._robot.reset(env_ids)
     zero_action = torch.zeros((env.num_envs, env.action_dim), device=env.device)
-    joint_pos, sampled_seed, seed_index = _sample_safe_home_joint_pos(env, rng)
+    joint_pos, sampled_seed, left_seed_index, right_seed_index = _sample_safe_home_joint_pos(env, rng)
     joint_vel = torch.zeros_like(env._robot.data.joint_vel)
     env._robot.set_joint_position_target(joint_pos, env_ids=env_ids)
     env._robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
@@ -475,8 +548,10 @@ def _set_manual_scene_state(
         joint_pos_des[:, env._arm_joint_ids] = _reinject_proximal_posture(
             joint_pos_des[:, env._arm_joint_ids],
             sampled_seed,
-            blend=0.62,
+            left_blend=0.62,
+            right_blend=0.12,
         )
+        joint_pos_des = _lift_right_arm_out_of_table(joint_pos_des, env)
         joint_pos_des[:, env._arm_joint_ids] = torch.clamp(
             joint_pos_des[:, env._arm_joint_ids],
             env._joint_lower_limits,
@@ -486,16 +561,63 @@ def _set_manual_scene_state(
         env._joint_targets[:] = joint_pos_des
         env.step(zero_action)
 
+    if not _is_safe_tcp_start(
+        env,
+        table_top_z=table_top_z,
+        table_front_x=table_front_x,
+        table_back_x=table_back_x,
+    ):
+        # If the right arm is still trapped in a low branch, stop relying on
+        # IK alone. First pull the right arm back toward a curated tabletop
+        # template in joint space, then do a short TCP refinement pass.
+        joint_pos_now = _drive_right_arm_to_tabletop_template(env, env._robot.data.joint_pos.clone(), sampled_seed)
+
+        # Then give the right arm a short TCP recovery pass with only mild
+        # posture reinjection so it can stay near the tabletop seed branch.
+        recovery_right_target = right_start_target.copy()
+        recovery_right_target[0] = float(np.clip(recovery_right_target[0] + 0.10, table_front_x + 0.10, table_back_x - 0.10))
+        recovery_right_target[2] = max(float(recovery_right_target[2] + 0.18), table_top_z + 0.32)
+        for _ in range(12):
+            joint_pos_des = policy.solve_joint_targets(
+                left_target=left_start_target,
+                right_target=recovery_right_target,
+                speed_scale=2.8,
+            )
+            joint_pos_des[:, env._arm_joint_ids] = _reinject_proximal_posture(
+                joint_pos_des[:, env._arm_joint_ids],
+                sampled_seed,
+                left_blend=0.55,
+                right_blend=0.22,
+            )
+            joint_pos_des = _lift_right_arm_out_of_table(joint_pos_des, env)
+            joint_pos_des[:, env._arm_joint_ids[7:]] = 0.55 * joint_pos_des[:, env._arm_joint_ids[7:]] + 0.45 * joint_pos_now[:, env._arm_joint_ids[7:]]
+            joint_pos_des[:, env._arm_joint_ids] = torch.clamp(
+                joint_pos_des[:, env._arm_joint_ids],
+                env._joint_lower_limits,
+                env._joint_upper_limits,
+            )
+            env._robot.set_joint_position_target(joint_pos_des, env_ids=env_ids)
+            env._joint_targets[:] = joint_pos_des
+            env.step(zero_action)
+
     left_tcp = env._tcp_frames.data.target_pos_w[0, env._left_tcp_idx].detach().cpu().numpy()
     right_tcp = env._tcp_frames.data.target_pos_w[0, env._right_tcp_idx].detach().cpu().numpy()
+    safe_chain_body_ids = _get_safe_chain_body_ids(env)
+    left_chain_ids = safe_chain_body_ids["left"]
+    right_chain_ids = safe_chain_body_ids["right"]
+    left_chain_z = env._robot.data.body_link_pos_w[0, list(left_chain_ids), 2].detach().cpu().numpy()
+    right_chain_z = env._robot.data.body_link_pos_w[0, list(right_chain_ids), 2].detach().cpu().numpy()
     arm_joint_pos = env._robot.data.joint_pos[0, env._arm_joint_ids].detach().cpu().numpy()
     print(
         "[INFO] safe-start check "
-        f"seed_index={seed_index} "
+        f"left_seed_index={left_seed_index} "
+        f"right_seed_index={right_seed_index} "
         f"left_start_target={np.round(left_start_target, 4).tolist()} "
         f"right_start_target={np.round(right_start_target, 4).tolist()} "
         f"left_tcp={np.round(left_tcp, 4).tolist()} "
         f"right_tcp={np.round(right_tcp, 4).tolist()} "
+        f"left_chain_z={np.round(left_chain_z, 4).tolist()} "
+        f"right_chain_z={np.round(right_chain_z, 4).tolist()} "
         f"table_top_z={table_top_z:.4f} "
         f"arm_joint_pos={np.round(arm_joint_pos, 4).tolist()}"
     )
@@ -505,6 +627,8 @@ def _set_manual_scene_state(
         table_front_x=table_front_x,
         table_back_x=table_back_x,
     ):
+        env._closing_in_right_rollout_anchor = env._robot.data.joint_pos[:, env._arm_joint_ids[7:]].clone()
+        env._closing_in_right_rollout_anchor = env._robot.data.joint_pos[:, env._arm_joint_ids[7:]].clone()
         return
 
     raise RuntimeError(

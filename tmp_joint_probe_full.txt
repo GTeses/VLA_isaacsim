@@ -1,0 +1,30 @@
+FULL_PROBE_BEGIN
+00 left_joint1 lower=-3.142 upper=+1.000 current=-0.023
+01 left_joint2 lower=-1.000 upper=+3.140 current=+0.034
+02 left_joint3 lower=-0.523 upper=+1.570 current=+0.008
+03 left_joint4 lower=-1.570 upper=+0.523 current=+0.004
+04 left_joint5 lower=-3.140 upper=+3.140 current=+0.005
+05 left_joint6 lower=-3.140 upper=+3.140 current=+0.001
+06 left_joint7 lower=+0.000 upper=+2.617 current=+0.000
+07 right_joint1 lower=+0.000 upper=+2.617 current=+0.005
+08 right_joint2 lower=-3.140 upper=+3.140 current=-0.022
+09 right_joint3 lower=-3.140 upper=+3.140 current=+0.048
+10 right_joint4 lower=-1.396 upper=+1.396 current=-0.035
+11 right_joint5 lower=-1.396 upper=+1.396 current=-0.019
+12 right_joint6 lower=-1.396 upper=+1.396 current=-0.041
+13 right_joint7 lower=-1.396 upper=+1.396 current=-0.040
+PLUS idx=00 arm=left joint=left_joint1 delta=(-0.0287,-0.0005,+0.0011)
+PLUS idx=01 arm=left joint=left_joint2 delta=(+0.0002,+0.0005,-0.0001)
+PLUS idx=02 arm=left joint=left_joint3 delta=(+0.0014,+0.0295,-0.0002)
+PLUS idx=03 arm=left joint=left_joint4 delta=(+0.0010,-0.0004,-0.0001)
+PLUS idx=04 arm=left joint=left_joint5 delta=(+0.0014,+0.0028,-0.0003)
+PLUS idx=05 arm=left joint=left_joint6 delta=(+0.0002,-0.0008,-0.0001)
+PLUS idx=06 arm=left joint=left_joint7 delta=(+0.0133,-0.0001,-0.0021)
+PLUS idx=07 arm=right joint=right_joint1 delta=(+0.0134,+0.0004,-0.0015)
+PLUS idx=08 arm=right joint=right_joint2 delta=(+0.0009,+0.0007,-0.0001)
+PLUS idx=09 arm=right joint=right_joint3 delta=(+0.0003,+0.0018,-0.0000)
+PLUS idx=10 arm=right joint=right_joint4 delta=(+0.0001,+0.0004,-0.0000)
+PLUS idx=11 arm=right joint=right_joint5 delta=(+0.0026,-0.0007,-0.0017)
+PLUS idx=12 arm=right joint=right_joint6 delta=(+0.0001,+0.0002,-0.0000)
+PLUS idx=13 arm=right joint=right_joint7 delta=(-0.0003,+0.0005,+0.0000)
+FULL_PROBE_END
