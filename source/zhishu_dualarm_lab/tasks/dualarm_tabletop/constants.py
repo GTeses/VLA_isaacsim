@@ -60,10 +60,10 @@ RIGHT_WRIST_CAMERA_BODY_COLOR = (0.95, 0.45, 0.25)
 # hand adapter / dexterous hand link in this asset yet. Place the cameras
 # back near the wrist-side connection area so the mounting logic matches the
 # intended wrist location once the hand model is attached.
-LEFT_WRIST_CAMERA_OFFSET_POS = (-0.045, 0.0, -0.05)
-RIGHT_WRIST_CAMERA_OFFSET_POS = (-0.045, 0.0, 0.05)
-LEFT_WRIST_CAMERA_OFFSET_ROT = (0.70710678, 0.0, 0.0, 0.70710678)
-RIGHT_WRIST_CAMERA_OFFSET_ROT = (0.0, 0.70710678, 0.70710678, 0.0)
+LEFT_WRIST_CAMERA_OFFSET_POS = (-0.045, 0.05, -0.05)
+RIGHT_WRIST_CAMERA_OFFSET_POS = (-0.045, 0.05, 0.05)
+LEFT_WRIST_CAMERA_OFFSET_ROT = (0.5, -0.5, 0.5, 0.5)
+RIGHT_WRIST_CAMERA_OFFSET_ROT = (0.0, -0.7071, 0.0, -0.7071)
 
 # Keep the policy-facing observation key name "external_image", but remount
 # that camera onto the head near the mouth area instead of using a fixed
