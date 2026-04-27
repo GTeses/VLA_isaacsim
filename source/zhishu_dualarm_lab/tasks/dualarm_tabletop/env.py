@@ -66,6 +66,7 @@ class ZhishuDualArmTabletopEnv(DirectRLEnv):
     """
 
     cfg: ZhishuDualArmTabletopEnvCfg
+    _TABLETOP_START_JOINT4_RAD = float(np.deg2rad(96.0))
 
     def __init__(self, cfg: ZhishuDualArmTabletopEnvCfg, render_mode: str | None = None, **kwargs):
         self._latest_policy_input: dict | None = None
@@ -79,6 +80,10 @@ class ZhishuDualArmTabletopEnv(DirectRLEnv):
         self._joint_lower_limits = self._robot.data.soft_joint_pos_limits[0, self._arm_joint_ids, 0].clone()
         self._joint_upper_limits = self._robot.data.soft_joint_pos_limits[0, self._arm_joint_ids, 1].clone()
         self._default_joint_pos = self._robot.data.default_joint_pos.clone()
+        self._left_joint4_id = self._robot.find_joints(["left_joint4"])[0][0]
+        self._right_joint4_id = self._robot.find_joints(["right_joint4"])[0][0]
+        self._default_joint_pos[:, self._left_joint4_id] = self._TABLETOP_START_JOINT4_RAD
+        self._default_joint_pos[:, self._right_joint4_id] = self._TABLETOP_START_JOINT4_RAD
         # Full-joint target tensor is preserved because the articulation
         # still contains non-arm joints that should remain at their default values.
         self._joint_targets = self._default_joint_pos.clone()
@@ -303,6 +308,10 @@ class ZhishuDualArmTabletopEnv(DirectRLEnv):
             (len(env_ids), len(self._arm_joint_ids)),
             self.device,
         )
+        # Keep both elbow-lift joints fixed at 96 deg so each reset starts in the
+        # tabletop-safe branch instead of occasionally dropping below the table.
+        joint_pos[:, self._left_joint4_id] = self._TABLETOP_START_JOINT4_RAD
+        joint_pos[:, self._right_joint4_id] = self._TABLETOP_START_JOINT4_RAD
         joint_pos[:, self._arm_joint_ids] = torch.clamp(
             joint_pos[:, self._arm_joint_ids],
             self._joint_lower_limits,

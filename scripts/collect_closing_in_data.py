@@ -133,7 +133,6 @@ class ClosingInIKPolicy:
             jitter_scale=spec.jitter_scale,
         )
         _, right_joint_pos_des = self._solve_arm(
-        _, right_joint_pos_des = self._solve_arm(
             controller=self.right_controller,
             tcp_frame_idx=self.right_tcp_frame_idx,
             jacobi_body_idx=self.right_jacobi_body_idx,
@@ -330,8 +329,6 @@ def _reinject_proximal_posture(
     *,
     left_blend: float,
     right_blend: float,
-    left_blend: float,
-    right_blend: float,
 ) -> torch.Tensor:
     """Blend shoulder/elbow joints back toward the sampled natural seed.
 
@@ -346,13 +343,7 @@ def _reinject_proximal_posture(
             (1.0 - left_blend) * blended[:, joint_idx] + left_blend * sampled_seed[joint_idx]
         )
     for joint_idx in RIGHT_PROXIMAL_LOCAL_IDS:
-    for joint_idx in LEFT_PROXIMAL_LOCAL_IDS:
         blended[:, joint_idx] = (
-            (1.0 - left_blend) * blended[:, joint_idx] + left_blend * sampled_seed[joint_idx]
-        )
-    for joint_idx in RIGHT_PROXIMAL_LOCAL_IDS:
-        blended[:, joint_idx] = (
-            (1.0 - right_blend) * blended[:, joint_idx] + right_blend * sampled_seed[joint_idx]
             (1.0 - right_blend) * blended[:, joint_idx] + right_blend * sampled_seed[joint_idx]
         )
     return blended
