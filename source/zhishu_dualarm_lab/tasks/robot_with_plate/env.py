@@ -36,16 +36,18 @@ from .constants import (
     WAIST_CAMERA_OFFSET_POS,
     WAIST_CAMERA_OFFSET_ROT,
 )
-from .env_cfg import ZhishuDualArmRobotOnlyEnvCfg
+from .env_cfg import ZhishuDualArmRobotWithPlateEnvCfg
 
 
-class ZhishuDualArmRobotOnlyEnv(DirectRLEnv):
-    """Robot-only dual-arm environment with the same action/obs contract."""
+class ZhishuDualArmRobotWithPlateEnv(DirectRLEnv):
+    """Robot dual-arm environment with a fixed plate prop and the same action/obs contract."""
 
-    cfg: ZhishuDualArmRobotOnlyEnvCfg
+    cfg: ZhishuDualArmRobotWithPlateEnvCfg
     _TABLETOP_START_JOINT4_RAD = float(np.deg2rad(96.0))
+    _LEFT_JOINT5_START_RAD = float(np.deg2rad(-100.0))
+    _RIGHT_JOINT5_START_RAD = float(np.deg2rad(100.0))
 
-    def __init__(self, cfg: ZhishuDualArmRobotOnlyEnvCfg, render_mode: str | None = None, **kwargs):
+    def __init__(self, cfg: ZhishuDualArmRobotWithPlateEnvCfg, render_mode: str | None = None, **kwargs):
         self._latest_policy_input: dict | None = None
         super().__init__(cfg=cfg, render_mode=render_mode, **kwargs)
 
@@ -56,8 +58,12 @@ class ZhishuDualArmRobotOnlyEnv(DirectRLEnv):
         self._default_joint_pos = self._robot.data.default_joint_pos.clone()
         self._left_joint4_id = self._robot.find_joints(["left_joint4"])[0][0]
         self._right_joint4_id = self._robot.find_joints(["right_joint4"])[0][0]
+        self._left_joint5_id = self._robot.find_joints(["left_joint5"])[0][0]
+        self._right_joint5_id = self._robot.find_joints(["right_joint5"])[0][0]
         self._default_joint_pos[:, self._left_joint4_id] = self._TABLETOP_START_JOINT4_RAD
         self._default_joint_pos[:, self._right_joint4_id] = self._TABLETOP_START_JOINT4_RAD
+        self._default_joint_pos[:, self._left_joint5_id] = self._LEFT_JOINT5_START_RAD
+        self._default_joint_pos[:, self._right_joint5_id] = self._RIGHT_JOINT5_START_RAD
         self._joint_targets = self._default_joint_pos.clone()
         self._last_action = torch.zeros((self.num_envs, self.action_dim), device=self.device)
         self._raw_action = torch.zeros_like(self._last_action)
@@ -68,7 +74,7 @@ class ZhishuDualArmRobotOnlyEnv(DirectRLEnv):
         self._waist_camera_body_id = self._robot.find_bodies([WAIST_CAMERA_LINK_NAME])[0][0]
         self._left_camera_body_id = self._robot.find_bodies([LEFT_TCP_LINK_NAME])[0][0]
         self._right_camera_body_id = self._robot.find_bodies([RIGHT_TCP_LINK_NAME])[0][0]
-        marker_cfg = CUBOID_MARKER_CFG.replace(prim_path="/Visuals/ZhishuRobotOnlyCameraBodies")
+        marker_cfg = CUBOID_MARKER_CFG.replace(prim_path="/Visuals/ZhishuRobotWithPlateCameraBodies")
         marker_cfg.markers["cuboid"].size = CAMERA_BODY_SIZE
         self._camera_body_markers = VisualizationMarkers(marker_cfg)
 
@@ -97,13 +103,8 @@ class ZhishuDualArmRobotOnlyEnv(DirectRLEnv):
         return combine_frame_transforms(parent_pos, parent_quat, offset_pos_tensor, offset_quat_tensor)
 
     def _sync_camera_mounts(self) -> None:
-        head_pos, _ = self._camera_world_pose(
+        head_pos, head_quat = self._camera_world_pose(
             parent_body_id=self._head_camera_body_id, offset_pos=HEAD_CAMERA_OFFSET_POS, offset_rot=HEAD_CAMERA_OFFSET_ROT
-        )
-        # Keep the head camera level in world coordinates while still
-        # translating it with the head link.
-        head_quat = torch.tensor(HEAD_CAMERA_OFFSET_ROT, dtype=torch.float32, device=self.device).repeat(
-            self.num_envs, 1
         )
         waist_pos, waist_quat = self._camera_world_pose(
             parent_body_id=self._waist_camera_body_id, offset_pos=WAIST_CAMERA_OFFSET_POS, offset_rot=WAIST_CAMERA_OFFSET_ROT
@@ -122,7 +123,9 @@ class ZhishuDualArmRobotOnlyEnv(DirectRLEnv):
         self._left_wrist_camera.set_world_poses(positions=left_pos, orientations=left_quat, convention="world")
         self._right_wrist_camera.set_world_poses(positions=right_pos, orientations=right_quat, convention="world")
         self._waist_camera.set_world_poses(positions=waist_pos, orientations=waist_quat, convention="world")
-        self._camera_body_markers.visualize(translations=head_pos, orientations=head_quat)
+        marker_pos = torch.cat([head_pos, waist_pos, left_pos, right_pos], dim=0)
+        marker_quat = torch.cat([head_quat, waist_quat, left_quat, right_quat], dim=0)
+        self._camera_body_markers.visualize(translations=marker_pos, orientations=marker_quat)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self._raw_action = actions.clone().clamp(-1.0, 1.0)
@@ -197,6 +200,8 @@ class ZhishuDualArmRobotOnlyEnv(DirectRLEnv):
         )
         joint_pos[:, self._left_joint4_id] = self._TABLETOP_START_JOINT4_RAD
         joint_pos[:, self._right_joint4_id] = self._TABLETOP_START_JOINT4_RAD
+        joint_pos[:, self._left_joint5_id] = self._LEFT_JOINT5_START_RAD
+        joint_pos[:, self._right_joint5_id] = self._RIGHT_JOINT5_START_RAD
         joint_pos[:, self._arm_joint_ids] = torch.clamp(
             joint_pos[:, self._arm_joint_ids], self._joint_lower_limits, self._joint_upper_limits
         )
@@ -210,7 +215,7 @@ class ZhishuDualArmRobotOnlyEnv(DirectRLEnv):
         if self._latest_policy_input is None:
             _ = self._get_observations()
         if self._latest_policy_input is None:
-            raise RuntimeError("Policy input requested before robot-only observations were initialized.")
+            raise RuntimeError("Policy input requested before robot-with-plate observations were initialized.")
         return {
             "prompt": self._latest_policy_input["prompt"][0],
             "observation/external_image": self._latest_policy_input["observation/external_image"][0].cpu().numpy(),

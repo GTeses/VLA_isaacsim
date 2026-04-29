@@ -6,8 +6,8 @@ import numpy as np
 import torch
 from isaaclab.assets import Articulation, RigidObject
 from isaaclab.envs import DirectRLEnv
-from isaaclab.markers import VisualizationMarkers
-from isaaclab.markers.config import CUBOID_MARKER_CFG
+# from isaaclab.markers import VisualizationMarkers
+# from isaaclab.markers.config import CUBOID_MARKER_CFG
 from isaaclab.utils.math import combine_frame_transforms
 from isaaclab.utils.math import sample_uniform
 
@@ -26,7 +26,7 @@ from .constants import (
     HEAD_CAMERA_LINK_NAME,
     HEAD_CAMERA_OFFSET_POS,
     HEAD_CAMERA_OFFSET_ROT,
-    CAMERA_BODY_SIZE,
+    # CAMERA_BODY_SIZE,
     OBJECT_TARGET_PROGRESS_SCALE,
     OBJECT_TARGET_SHAPING_SCALE,
     JOINT_VELOCITY_SCALE,
@@ -66,6 +66,7 @@ class ZhishuDualArmTabletopEnv(DirectRLEnv):
     """
 
     cfg: ZhishuDualArmTabletopEnvCfg
+    _TABLETOP_START_JOINT4_RAD = float(np.deg2rad(96.0))
 
     def __init__(self, cfg: ZhishuDualArmTabletopEnvCfg, render_mode: str | None = None, **kwargs):
         self._latest_policy_input: dict | None = None
@@ -79,6 +80,10 @@ class ZhishuDualArmTabletopEnv(DirectRLEnv):
         self._joint_lower_limits = self._robot.data.soft_joint_pos_limits[0, self._arm_joint_ids, 0].clone()
         self._joint_upper_limits = self._robot.data.soft_joint_pos_limits[0, self._arm_joint_ids, 1].clone()
         self._default_joint_pos = self._robot.data.default_joint_pos.clone()
+        self._left_joint4_id = self._robot.find_joints(["left_joint4"])[0][0]
+        self._right_joint4_id = self._robot.find_joints(["right_joint4"])[0][0]
+        self._default_joint_pos[:, self._left_joint4_id] = self._TABLETOP_START_JOINT4_RAD
+        self._default_joint_pos[:, self._right_joint4_id] = self._TABLETOP_START_JOINT4_RAD
         # Full-joint target tensor is preserved because the articulation
         # still contains non-arm joints that should remain at their default values.
         self._joint_targets = self._default_joint_pos.clone()
@@ -95,9 +100,9 @@ class ZhishuDualArmTabletopEnv(DirectRLEnv):
         self._waist_camera_body_id = self._robot.find_bodies([WAIST_CAMERA_LINK_NAME])[0][0]
         self._left_camera_body_id = self._robot.find_bodies([LEFT_TCP_LINK_NAME])[0][0]
         self._right_camera_body_id = self._robot.find_bodies([RIGHT_TCP_LINK_NAME])[0][0]
-        marker_cfg = CUBOID_MARKER_CFG.replace(prim_path="/Visuals/ZhishuCameraBodies")
-        marker_cfg.markers["cuboid"].size = CAMERA_BODY_SIZE
-        self._camera_body_markers = VisualizationMarkers(marker_cfg)
+        # marker_cfg = CUBOID_MARKER_CFG.replace(prim_path="/Visuals/ZhishuCameraBodies")
+        # marker_cfg.markers["cuboid"].size = CAMERA_BODY_SIZE
+        # self._camera_body_markers = VisualizationMarkers(marker_cfg)
 
         self._action_adapter = JointActionAdapter(JointActionAdapterCfg(delta_scale=ARM_ACTION_DELTA_SCALE))
         self._policy_action_adapter = PolicyActionChunkAdapter(action_dim=self.action_dim)
@@ -154,9 +159,9 @@ class ZhishuDualArmTabletopEnv(DirectRLEnv):
         self._left_wrist_camera.set_world_poses(positions=left_pos, orientations=left_quat, convention="world")
         self._right_wrist_camera.set_world_poses(positions=right_pos, orientations=right_quat, convention="world")
         self._waist_camera.set_world_poses(positions=waist_pos, orientations=waist_quat, convention="world")
-        marker_pos = torch.cat([head_pos, waist_pos, left_pos, right_pos], dim=0)
-        marker_quat = torch.cat([head_quat, waist_quat, left_quat, right_quat], dim=0)
-        self._camera_body_markers.visualize(translations=marker_pos, orientations=marker_quat)
+        # marker_pos = torch.cat([head_pos, waist_pos, left_pos, right_pos], dim=0)
+        # marker_quat = torch.cat([head_quat, waist_quat, left_quat, right_quat], dim=0)
+        # self._camera_body_markers.visualize(translations=marker_pos, orientations=marker_quat)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         # Convert normalized external actions into arm joint position targets.
@@ -303,6 +308,10 @@ class ZhishuDualArmTabletopEnv(DirectRLEnv):
             (len(env_ids), len(self._arm_joint_ids)),
             self.device,
         )
+        # Keep both elbow-lift joints fixed at 96 deg so each reset starts in the
+        # tabletop-safe branch instead of occasionally dropping below the table.
+        joint_pos[:, self._left_joint4_id] = self._TABLETOP_START_JOINT4_RAD
+        joint_pos[:, self._right_joint4_id] = self._TABLETOP_START_JOINT4_RAD
         joint_pos[:, self._arm_joint_ids] = torch.clamp(
             joint_pos[:, self._arm_joint_ids],
             self._joint_lower_limits,

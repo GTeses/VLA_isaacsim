@@ -13,8 +13,6 @@ from .constants import (
     EXTERNAL_CAMERA_NAME,
     HEAD_CAMERA_LINK_NAME,
     LEFT_WRIST_CAMERA_NAME,
-    LEFT_TCP_LINK_NAME,
-    RIGHT_TCP_LINK_NAME,
     RIGHT_WRIST_CAMERA_NAME,
     WAIST_CAMERA_LINK_NAME,
     WAIST_CAMERA_NAME,
@@ -63,7 +61,10 @@ def build_waist_camera_cfg() -> CameraCfg:
 
 def build_left_wrist_camera_cfg() -> CameraCfg:
     return CameraCfg(
-        prim_path=f"{{ENV_REGEX_NS}}/Robot/{LEFT_TCP_LINK_NAME}/{LEFT_WRIST_CAMERA_NAME}",
+        # Wrist cameras are driven by explicit world poses in env.py, so keep
+        # them outside the robot prim hierarchy to avoid inheriting stale link
+        # transforms while also being repositioned each frame.
+        prim_path=f"{{ENV_REGEX_NS}}/{LEFT_WRIST_CAMERA_NAME}",
         update_period=0.0,
         update_latest_camera_pose=True,
         height=WRIST_CAMERA_HEIGHT,
@@ -82,7 +83,7 @@ def build_left_wrist_camera_cfg() -> CameraCfg:
 
 def build_right_wrist_camera_cfg() -> CameraCfg:
     return CameraCfg(
-        prim_path=f"{{ENV_REGEX_NS}}/Robot/{RIGHT_TCP_LINK_NAME}/{RIGHT_WRIST_CAMERA_NAME}",
+        prim_path=f"{{ENV_REGEX_NS}}/{RIGHT_WRIST_CAMERA_NAME}",
         update_period=0.0,
         update_latest_camera_pose=True,
         height=WRIST_CAMERA_HEIGHT,
