@@ -107,11 +107,15 @@ def sample_episode_spec(rng: np.random.Generator, episode_index: int, base_targe
     target_mode = str(rng.choice(["center", "symmetric"], p=[0.45, 0.55]))
     center_target = np.asarray(base_target, dtype=np.float32).copy()
     center_target[0] += float(rng.uniform(-0.12, 0.12))
-    # Do not inherit the scene's default target-zone lateral bias here.
-    # For closing-in data we want targets to cover the tabletop middle band on
-    # both sides of the robot so we can distinguish posture failures from
-    # "the target just happened to sit on the left" artifacts.
-    center_target[1] = float(rng.uniform(-0.22, 0.22))
+    # 中文说明：
+    # 这里之前让 center_target 的 y 覆盖了过宽的 [-0.28, 0.28]。
+    # 对 symmetric 任务来说，这会导致“中心点本身已经偏左很多”，
+    # 即使再减一个 lateral_offset，右臂目标仍可能落在身体左侧。
+    # 这样看起来就像“两个手臂都在往左边靠”，但根因其实是任务采样本身。
+    #
+    # closing-in 的目标不是考察跨身体大范围横摆，而是考察双臂在桌面中部
+    # 工作区内向中线/对称点聚拢。因此这里把中心目标约束在更窄的中线带内。
+    center_target[1] = float(rng.uniform(-0.08, 0.08))
     center_target[2] += float(rng.uniform(-0.015, 0.035))
 
     if target_mode == "center":
@@ -119,11 +123,17 @@ def sample_episode_spec(rng: np.random.Generator, episode_index: int, base_targe
         right_target = center_target.copy()
         prompt = str(rng.choice(_CENTER_PROMPTS))
     else:
-        lateral_offset = float(rng.uniform(0.08, 0.18))
+        # 中文说明：
+        # symmetric 模式必须保证左目标在 y>0，右目标在 y<0，
+        # 否则右臂会被任务本身要求穿过身体中线去左侧，视觉上就会像“右臂
+        # 紧贴身体也要往左边凑”。这里显式保证左右目标分居中线两侧。
+        lateral_offset = float(rng.uniform(0.12, 0.20))
         left_target = center_target.copy()
         right_target = center_target.copy()
         left_target[1] += lateral_offset
         right_target[1] -= lateral_offset
+        left_target[1] = float(max(left_target[1], 0.10))
+        right_target[1] = float(min(right_target[1], -0.10))
         prompt = str(rng.choice(_SYMMETRIC_PROMPTS))
 
     return ClosingInEpisodeSpec(

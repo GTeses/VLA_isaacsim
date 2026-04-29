@@ -39,32 +39,40 @@ if str(SOURCE_ROOT) not in sys.path:
 # Safe-start therefore uses independent tabletop templates for each arm instead
 # of forcing the right arm to inherit a left-arm-shaped posture prior.
 LEFT_SAFE_TABLETOP_HOME_POSES = (
-    np.array([-0.95, 0.00, 0.28, 0.00, 0.05, 0.00, 0.55], dtype=np.float32),
-    np.array([-1.15, 0.05, 0.40, -0.05, 0.08, 0.00, 0.80], dtype=np.float32),
-    np.array([-0.75, -0.05, 0.18, 0.02, -0.05, 0.02, 0.35], dtype=np.float32),
-    np.array([-1.05, 0.00, 0.48, -0.10, 0.12, -0.05, 0.95], dtype=np.float32),
-    np.array([-0.88, 0.03, 0.32, 0.04, 0.00, 0.06, 0.68], dtype=np.float32),
+    # 中文说明：
+    # 左臂控制器当前只跟踪 TCP 位置，不主动修正末端姿态。
+    # 因此 tabletop seed 里如果把小臂/手腕 roll 预先写得很歪，
+    # rollout 往往会把这个扭曲一路保留下去。这里把末端相关角度压回接近 0。
+    np.array([-0.95, 0.00, 0.28, 0.00, 0.00, 0.00, 0.00], dtype=np.float32),
+    np.array([-1.15, 0.05, 0.40, -0.05, 0.00, 0.00, 0.00], dtype=np.float32),
+    np.array([-0.75, -0.05, 0.18, 0.02, 0.00, 0.02, 0.00], dtype=np.float32),
+    np.array([-1.05, 0.00, 0.48, -0.10, 0.00, -0.05, 0.00], dtype=np.float32),
+    np.array([-0.88, 0.03, 0.32, 0.04, 0.00, 0.06, 0.00], dtype=np.float32),
 )
 
 RIGHT_SAFE_TABLETOP_HOME_POSES = (
-    np.array([1.42, -0.12, -0.08, 1.12, -0.30, 0.16, 0.00], dtype=np.float32),
-    np.array([1.56, -0.04, -0.16, 1.26, -0.18, 0.10, 0.02], dtype=np.float32),
-    np.array([1.30, -0.18, -0.04, 1.02, -0.42, 0.18, -0.02], dtype=np.float32),
-    np.array([1.70, 0.02, -0.22, 1.34, -0.10, 0.04, 0.04], dtype=np.float32),
-    np.array([1.48, -0.08, -0.12, 1.18, -0.24, 0.14, -0.04], dtype=np.float32),
+    # 中文说明：
+    # 右臂之前的问题不是“肘不够弯”，而是肘一开始就弯得太厉害，
+    # 导致 IK 更倾向于摆动整条折叠的手臂，而不是自然伸展去够目标。
+    # 这里把 right_joint4（第 4 个数字）压回较小的自然弯曲量。
+    np.array([1.48, -0.92, -0.08, 0.20, -0.22, 0.16, 0.00], dtype=np.float32),
+    np.array([1.62, -1.02, -0.16, 0.25, -0.14, 0.10, 0.02], dtype=np.float32),
+    np.array([1.34, -0.82, -0.04, 0.15, -0.34, 0.18, -0.02], dtype=np.float32),
+    np.array([1.74, -0.72, -0.22, 0.30, -0.06, 0.04, 0.04], dtype=np.float32),
+    np.array([1.54, -0.90, -0.12, 0.20, -0.18, 0.14, -0.04], dtype=np.float32),
 )
-
-# Left-arm posture anchoring can stay close to the earlier probe result because
-# the left side already looks broadly natural. On the right side, however, the
-# visually important "shoulder + elbow" appearance depends much more on
-# right_joint2/right_joint4 than on the earlier probe-only set. Keep the right
-# arm anchored on the joints that actually determine whether it looks lifted and
-# tabletop-ready, not just on the joints that happened to move the TCP most.
-LEFT_PROXIMAL_LOCAL_IDS = (0, 2, 6)
-RIGHT_PROXIMAL_LOCAL_IDS = (7, 8, 10, 11)
 
 LEFT_SAFE_CHAIN_LINK_NAMES = ("left_link3", "left_link5")
 RIGHT_SAFE_CHAIN_LINK_NAMES = ("right_link3", "right_link5")
+TABLETOP_START_JOINT4_RAD = float(np.deg2rad(96.0))
+
+# 中文说明：
+# rollout 阶段只对冗余关节和手腕做轻量软锚定：
+# - 不锁肩部水平旋转(0) / 肩俯仰(1) / 主肘关节(3)
+# - 只保护肘外翻方向(2)、前臂翻滚(4) 和双向手腕(5,6)
+# 这样 IK 仍然拥有完整的 3D 到达能力，同时不至于让手腕在纯位置控制下乱漂。
+LEFT_PROXIMAL_LOCAL_IDS = (2, 4, 5, 6)
+RIGHT_PROXIMAL_LOCAL_IDS = (9, 11, 12, 13)
 
 
 def _clip_xyz_step(err: torch.Tensor, max_norm: float) -> torch.Tensor:
@@ -122,7 +130,7 @@ class ClosingInIKPolicy:
 
     def infer(self, spec, step_idx: int) -> np.ndarray:
         del step_idx
-        left_action, _ = self._solve_arm(
+        _, left_joint_pos_des = self._solve_arm(
             controller=self.left_controller,
             tcp_frame_idx=self.left_tcp_frame_idx,
             jacobi_body_idx=self.left_jacobi_body_idx,
@@ -132,6 +140,14 @@ class ClosingInIKPolicy:
             speed_scale=spec.speed_scale,
             jitter_scale=spec.jitter_scale,
         )
+        left_joint_pos_des = _apply_left_rollout_posture_bias(
+            self.env,
+            left_joint_pos_des,
+            spec=spec,
+        )
+        left_joint_pos = self.env._robot.data.joint_pos[:, self.left_joint_ids]
+        left_action = ((left_joint_pos_des - left_joint_pos) / self.delta_scale).clamp(-1.0, 1.0)
+
         _, right_joint_pos_des = self._solve_arm(
             controller=self.right_controller,
             tcp_frame_idx=self.right_tcp_frame_idx,
@@ -142,13 +158,6 @@ class ClosingInIKPolicy:
             speed_scale=spec.speed_scale,
             jitter_scale=spec.jitter_scale,
         )
-        right_joint_pos_des = _apply_right_rollout_posture_bias(
-            self.env,
-            right_joint_pos_des,
-            spec=spec,
-        )
-        right_joint_pos = self.env._robot.data.joint_pos[:, self.right_joint_ids]
-        right_action = ((right_joint_pos_des - right_joint_pos) / self.delta_scale).clamp(-1.0, 1.0)
         right_joint_pos_des = _apply_right_rollout_posture_bias(
             self.env,
             right_joint_pos_des,
@@ -240,6 +249,52 @@ def _get_safe_chain_body_ids(env) -> dict[str, tuple[int, ...]]:
     return env._closing_in_safe_chain_body_ids
 
 
+def _apply_left_rollout_posture_bias(
+    env,
+    left_joint_pos_des: torch.Tensor,
+    *,
+    spec,
+) -> torch.Tensor:
+    """对左臂 rollout 做轻量 tabletop branch 保护，只拉冗余/手腕关节。"""
+
+    anchor = getattr(env, "_closing_in_left_rollout_anchor", None)
+    if anchor is None:
+        return left_joint_pos_des
+
+    biased = left_joint_pos_des.clone()
+    for local_idx in (2, 4, 5, 6):
+        biased[:, local_idx] = 0.72 * biased[:, local_idx] + 0.28 * anchor[:, local_idx]
+
+    if float(spec.left_target[1]) < -0.03:
+        for local_idx in (2, 4, 5, 6):
+            biased[:, local_idx] = 0.84 * biased[:, local_idx] + 0.16 * anchor[:, local_idx]
+
+    return biased
+
+
+def _apply_right_rollout_posture_bias(
+    env,
+    right_joint_pos_des: torch.Tensor,
+    *,
+    spec,
+) -> torch.Tensor:
+    """对右臂 rollout 做轻量 tabletop branch 保护，只拉冗余/手腕关节。"""
+
+    anchor = getattr(env, "_closing_in_right_rollout_anchor", None)
+    if anchor is None:
+        return right_joint_pos_des
+
+    biased = right_joint_pos_des.clone()
+    for local_idx in (2, 4, 5, 6):
+        biased[:, local_idx] = 0.72 * biased[:, local_idx] + 0.28 * anchor[:, local_idx]
+
+    if float(spec.right_target[1]) < -0.02:
+        for local_idx in (2, 4, 5, 6):
+            biased[:, local_idx] = 0.84 * biased[:, local_idx] + 0.16 * anchor[:, local_idx]
+
+    return biased
+
+
 def _is_safe_tcp_start(env, *, table_top_z: float, table_front_x: float, table_back_x: float) -> bool:
     left_tcp = env._tcp_frames.data.target_pos_w[0, env._left_tcp_idx]
     right_tcp = env._tcp_frames.data.target_pos_w[0, env._right_tcp_idx]
@@ -297,7 +352,10 @@ def _sample_safe_home_joint_pos(
             rng.uniform(-0.06, 0.06),
             rng.uniform(-0.06, 0.06),
             rng.uniform(-0.06, 0.06),
-            rng.uniform(-0.32, 0.32),
+            # 中文说明：
+            # 这里如果给左臂末端 roll 太大的随机噪声，而控制器又只管位置不管姿态，
+            # 那么手腕一旦在初始化时被拧歪，rollout 里就很难自己恢复。
+            rng.uniform(-0.04, 0.04),
         ],
         dtype=np.float32,
     )
@@ -319,108 +377,67 @@ def _sample_safe_home_joint_pos(
     noise = torch.as_tensor(np.concatenate([left_noise, right_noise]), dtype=torch.float32, device=env.device)
     base = torch.cat([left_base, right_base], dim=0)
     sampled = torch.clamp(base + noise, env._joint_lower_limits, env._joint_upper_limits)
+    # 中文说明：
+    # 参考 robot_only 版本的有效做法：不要让左右手肘各自去“猜”桌上工作分支，
+    # 而是先把两侧 joint4 一起放到同一个桌面上方可工作的起始角附近。
+    # 这样 IK 进入的是一个已经验证过的分支，后续只需微调，而不是再从坏分支里挣扎。
+    left_joint4 = np.clip(
+        TABLETOP_START_JOINT4_RAD + float(rng.uniform(-0.08, 0.08)),
+        float(env._joint_lower_limits[3].item()),
+        float(env._joint_upper_limits[3].item()),
+    )
+    right_joint4 = np.clip(
+        TABLETOP_START_JOINT4_RAD + float(rng.uniform(-0.08, 0.08)),
+        float(env._joint_lower_limits[10].item()),
+        float(env._joint_upper_limits[10].item()),
+    )
+    sampled[3] = float(left_joint4)
+    sampled[10] = float(right_joint4)
     joint_pos[0, env._arm_joint_ids] = sampled
     return joint_pos, sampled.clone(), left_seed_index, right_seed_index
 
 
-def _reinject_proximal_posture(
-    current_joint_pos: torch.Tensor,
-    sampled_seed: torch.Tensor,
-    *,
-    left_blend: float,
-    right_blend: float,
-) -> torch.Tensor:
-    """Blend shoulder/elbow joints back toward the sampled natural seed.
-
-    Position-only IK is free to reuse the same redundant branch over and over.
-    A stronger proximal reinjection keeps the shoulder and upper-arm posture tied
-    to the chosen natural seed while leaving enough freedom for TCP motion.
-    """
-
-    blended = current_joint_pos.clone()
-    for joint_idx in LEFT_PROXIMAL_LOCAL_IDS:
-        blended[:, joint_idx] = (
-            (1.0 - left_blend) * blended[:, joint_idx] + left_blend * sampled_seed[joint_idx]
-        )
-    for joint_idx in RIGHT_PROXIMAL_LOCAL_IDS:
-        blended[:, joint_idx] = (
-            (1.0 - right_blend) * blended[:, joint_idx] + right_blend * sampled_seed[joint_idx]
-        )
-    return blended
-
-
-def _lift_right_arm_out_of_table(
-    joint_pos_des: torch.Tensor,
-    env,
-) -> torch.Tensor:
-    """Bias the right arm toward a higher, more forward tabletop branch.
-
-    The current articulation consistently falls into a low right-arm branch
-    during safe-start. Use a small joint-space bias on the empirically active
-    right-arm joints before writing targets to sim.
-    """
-
-    adjusted = joint_pos_des.clone()
-    right = adjusted[:, env._arm_joint_ids[7:]]
-    # Explicitly lift the visually important shoulder/elbow chain.
-    right[:, 0] = torch.clamp(right[:, 0] + 0.18, env._joint_lower_limits[7], env._joint_upper_limits[7])
-    right[:, 1] = torch.clamp(right[:, 1] + 0.20, env._joint_lower_limits[8], env._joint_upper_limits[8])
-    right[:, 3] = torch.clamp(right[:, 3] + 0.22, env._joint_lower_limits[10], env._joint_upper_limits[10])
-    right[:, 4] = torch.clamp(right[:, 4] - 0.14, env._joint_lower_limits[11], env._joint_upper_limits[11])
-    adjusted[:, env._arm_joint_ids[7:]] = right
-    return adjusted
-
-
-def _drive_right_arm_to_tabletop_template(
+def _drive_arms_to_tabletop_template(
     env,
     current_joint_pos: torch.Tensor,
     sampled_seed: torch.Tensor,
     *,
     steps: int = 12,
 ) -> torch.Tensor:
-    """Hard-reset the right arm toward a tabletop-safe joint template.
+    """把双臂一起拉回一个简单、对称、已知可工作的桌上肘部分支。
 
-    The right arm repeatedly falls into a low IK branch even when its target TCP
-    is above the table. When that happens, stop asking IK to discover the
-    tabletop posture on its own; directly interpolate the right-arm joints back
-    toward the sampled tabletop seed, with a small extra lift bias on the main
-    active joints.
+    robot_only 的经验说明：真正稳定的不是大量右臂特化补丁，而是先把
+    左右 joint4 放进同一个桌面工作分支。这里不再维持右臂专用硬模板，
+    只保留一个最小化的“双臂对称肘部重置”。
     """
 
     target = current_joint_pos.clone()
-    right_target = sampled_seed[7:].clone()
-    # Do not trust the noisy sampled seed for the right arm once we already
-    # know it collapsed into the low branch. Snap it toward a more explicit
-    # tabletop posture: higher shoulder yaw, a much less tucked shoulder-2, a
-    # clearly bent main elbow joint, and a less tucked wrist chain.
-    tabletop_template = torch.tensor(
-        [1.60, -0.02, -0.10, 1.38, -0.16, 0.20, 0.00],
-        dtype=torch.float32,
-        device=env.device,
+    arm_target = sampled_seed.clone()
+    arm_target[3] = torch.clamp(
+        torch.as_tensor(TABLETOP_START_JOINT4_RAD, dtype=torch.float32, device=env.device),
+        env._joint_lower_limits[3],
+        env._joint_upper_limits[3],
     )
-    right_target = 0.25 * right_target + 0.75 * tabletop_template
-    right_target[0] = torch.clamp(right_target[0], env._joint_lower_limits[7], env._joint_upper_limits[7])
-    right_target[1] = torch.clamp(right_target[1], env._joint_lower_limits[8], env._joint_upper_limits[8])
-    right_target[2] = torch.clamp(right_target[2], env._joint_lower_limits[9], env._joint_upper_limits[9])
-    right_target[3] = torch.clamp(right_target[3], env._joint_lower_limits[10], env._joint_upper_limits[10])
-    right_target[4] = torch.clamp(right_target[4], env._joint_lower_limits[11], env._joint_upper_limits[11])
-    right_target[5] = torch.clamp(right_target[5], env._joint_lower_limits[12], env._joint_upper_limits[12])
-    right_target[6] = torch.clamp(right_target[6], env._joint_lower_limits[13], env._joint_upper_limits[13])
-    target[:, env._arm_joint_ids[7:]] = right_target
+    arm_target[10] = torch.clamp(
+        torch.as_tensor(TABLETOP_START_JOINT4_RAD, dtype=torch.float32, device=env.device),
+        env._joint_lower_limits[10],
+        env._joint_upper_limits[10],
+    )
+    target[:, env._arm_joint_ids] = arm_target
 
     env_ids = torch.tensor([0], device=env.device, dtype=torch.long)
     zero_action = torch.zeros((env.num_envs, env.action_dim), device=env.device)
     start = current_joint_pos.clone()
     for alpha in torch.linspace(0.15, 1.0, steps, device=env.device):
         blended = start.clone()
-        blended[:, env._arm_joint_ids[7:]] = (
-            (1.0 - alpha) * start[:, env._arm_joint_ids[7:]]
-            + alpha * target[:, env._arm_joint_ids[7:]]
+        blended[:, env._arm_joint_ids] = (
+            (1.0 - alpha) * start[:, env._arm_joint_ids]
+            + alpha * target[:, env._arm_joint_ids]
         )
-        blended[:, env._arm_joint_ids[7:]] = torch.clamp(
-            blended[:, env._arm_joint_ids[7:]],
-            env._joint_lower_limits[7:],
-            env._joint_upper_limits[7:],
+        blended[:, env._arm_joint_ids] = torch.clamp(
+            blended[:, env._arm_joint_ids],
+            env._joint_lower_limits,
+            env._joint_upper_limits,
         )
         env._robot.set_joint_position_target(blended, env_ids=env_ids)
         env._joint_targets[:] = blended
@@ -536,13 +553,6 @@ def _set_manual_scene_state(
             right_target=right_start_target,
             speed_scale=2.4,
         )
-        joint_pos_des[:, env._arm_joint_ids] = _reinject_proximal_posture(
-            joint_pos_des[:, env._arm_joint_ids],
-            sampled_seed,
-            left_blend=0.62,
-            right_blend=0.12,
-        )
-        joint_pos_des = _lift_right_arm_out_of_table(joint_pos_des, env)
         joint_pos_des[:, env._arm_joint_ids] = torch.clamp(
             joint_pos_des[:, env._arm_joint_ids],
             env._joint_lower_limits,
@@ -558,13 +568,12 @@ def _set_manual_scene_state(
         table_front_x=table_front_x,
         table_back_x=table_back_x,
     ):
-        # If the right arm is still trapped in a low branch, stop relying on
-        # IK alone. First pull the right arm back toward a curated tabletop
-        # template in joint space, then do a short TCP refinement pass.
-        joint_pos_now = _drive_right_arm_to_tabletop_template(env, env._robot.data.joint_pos.clone(), sampled_seed)
+        # 中文说明：
+        # 这里不再继续叠右臂专用补丁，而是回到 robot_only 那条已经验证过的思路：
+        # 先把双臂一起送回同一个桌上肘部分支，再继续做短 recovery。
+        joint_pos_now = _drive_arms_to_tabletop_template(env, env._robot.data.joint_pos.clone(), sampled_seed)
 
-        # Then give the right arm a short TCP recovery pass with only mild
-        # posture reinjection so it can stay near the tabletop seed branch.
+        # 然后再做一小段 recovery，让 TCP 回到 closing-in 的起始区。
         recovery_right_target = right_start_target.copy()
         recovery_right_target[0] = float(np.clip(recovery_right_target[0] + 0.10, table_front_x + 0.10, table_back_x - 0.10))
         recovery_right_target[2] = max(float(recovery_right_target[2] + 0.18), table_top_z + 0.32)
@@ -574,14 +583,6 @@ def _set_manual_scene_state(
                 right_target=recovery_right_target,
                 speed_scale=2.8,
             )
-            joint_pos_des[:, env._arm_joint_ids] = _reinject_proximal_posture(
-                joint_pos_des[:, env._arm_joint_ids],
-                sampled_seed,
-                left_blend=0.55,
-                right_blend=0.22,
-            )
-            joint_pos_des = _lift_right_arm_out_of_table(joint_pos_des, env)
-            joint_pos_des[:, env._arm_joint_ids[7:]] = 0.55 * joint_pos_des[:, env._arm_joint_ids[7:]] + 0.45 * joint_pos_now[:, env._arm_joint_ids[7:]]
             joint_pos_des[:, env._arm_joint_ids] = torch.clamp(
                 joint_pos_des[:, env._arm_joint_ids],
                 env._joint_lower_limits,
@@ -618,7 +619,7 @@ def _set_manual_scene_state(
         table_front_x=table_front_x,
         table_back_x=table_back_x,
     ):
-        env._closing_in_right_rollout_anchor = env._robot.data.joint_pos[:, env._arm_joint_ids[7:]].clone()
+        env._closing_in_left_rollout_anchor = env._robot.data.joint_pos[:, env._arm_joint_ids[:7]].clone()
         env._closing_in_right_rollout_anchor = env._robot.data.joint_pos[:, env._arm_joint_ids[7:]].clone()
         return
 
