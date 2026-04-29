@@ -12,3 +12,6 @@ config/local_paths.json
 
 third_party/
 tmp/
+markdown/plan.md
+source/zhishu_dualarm_lab/assets/plate/texture/T_plate_BC001.png
+source/zhishu_dualarm_lab/assets/plate/texture/T_plate_ORM001.png
