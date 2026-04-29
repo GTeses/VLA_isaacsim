@@ -57,25 +57,31 @@ CAMERA_RGB_CHANNELS = 3
 CAMERA_BODY_SIZE = (0.02, 0.05, 0.05)
 HEAD_CAMERA_BODY_COLOR = (0.95, 0.80, 0.20)
 WAIST_CAMERA_BODY_COLOR = (0.75, 0.75, 0.75)
-LEFT_WRIST_CAMERA_BODY_COLOR = (0.25, 0.65, 0.95)
-RIGHT_WRIST_CAMERA_BODY_COLOR = (0.95, 0.45, 0.25)
+LEFT_WRIST_CAMERA_BODY_COLOR = (0.25, 0.85, 0.95)
+RIGHT_WRIST_CAMERA_BODY_COLOR = (0.95, 0.65, 0.25)
 
 # The current URDF ends at link7 on both arms: there is no separate fixed
 # hand adapter / dexterous hand link in this asset yet. Place the cameras
 # back near the wrist-side connection area so the mounting logic matches the
 # intended wrist location once the hand model is attached.
-LEFT_WRIST_CAMERA_OFFSET_POS = (-0.045, 0.05, -0.05)
-RIGHT_WRIST_CAMERA_OFFSET_POS = (-0.045, 0.05, 0.05)
-LEFT_WRIST_CAMERA_OFFSET_ROT = (0.5, -0.5, 0.5, 0.5)
-RIGHT_WRIST_CAMERA_OFFSET_ROT = (0.0, -0.7071, 0.0, -0.7071)
+# LEFT_WRIST_CAMERA_OFFSET_POS = (-0.045, 0.1, -0.05)
+# RIGHT_WRIST_CAMERA_OFFSET_POS = (-0.045, 0.1, 0.05)
+LEFT_WRIST_CAMERA_OFFSET_POS = (-0.08, 0.12, -0.07)
+RIGHT_WRIST_CAMERA_OFFSET_POS = (-0.08, 0.12, 0.07)
+
+#LEFT_WRIST_CAMERA_OFFSET_ROT = (0.7071, 0.0, 0.7071, 0.0)
+LEFT_WRIST_CAMERA_OFFSET_ROT = (0.7071, -0.5417, 0.4545, 0.0)
+
+#RIGHT_WRIST_CAMERA_OFFSET_ROT = (0.0, -0.7071, 0.0, -0.7071)
+RIGHT_WRIST_CAMERA_OFFSET_ROT = (0.5417, -0.7071, 0.0, -0.4545)
 
 # Approximate RGB intrinsics for a wrist-mounted RealSense D405.
 # This task still exposes RGB only, but the image size, FOV, and
 # close-range clipping are moved closer to D405 behavior.
 D405_RGB_HORIZONTAL_APERTURE = 20.955
 D405_RGB_FOCAL_LENGTH = 11.3
-D405_NEAR_CLIP = 0.07
-D405_FAR_CLIP = 2.0
+D405_NEAR_CLIP = 0.01
+D405_FAR_CLIP = 5.0
 
 # Keep the policy-facing observation key name "external_image", but remount
 # that camera onto the head near the mouth area instead of using a fixed
