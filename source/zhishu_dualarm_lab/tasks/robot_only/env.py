@@ -97,8 +97,13 @@ class ZhishuDualArmRobotOnlyEnv(DirectRLEnv):
         return combine_frame_transforms(parent_pos, parent_quat, offset_pos_tensor, offset_quat_tensor)
 
     def _sync_camera_mounts(self) -> None:
-        head_pos, head_quat = self._camera_world_pose(
+        head_pos, _ = self._camera_world_pose(
             parent_body_id=self._head_camera_body_id, offset_pos=HEAD_CAMERA_OFFSET_POS, offset_rot=HEAD_CAMERA_OFFSET_ROT
+        )
+        # Keep the head camera level in world coordinates while still
+        # translating it with the head link.
+        head_quat = torch.tensor(HEAD_CAMERA_OFFSET_ROT, dtype=torch.float32, device=self.device).repeat(
+            self.num_envs, 1
         )
         waist_pos, waist_quat = self._camera_world_pose(
             parent_body_id=self._waist_camera_body_id, offset_pos=WAIST_CAMERA_OFFSET_POS, offset_rot=WAIST_CAMERA_OFFSET_ROT
@@ -117,9 +122,7 @@ class ZhishuDualArmRobotOnlyEnv(DirectRLEnv):
         self._left_wrist_camera.set_world_poses(positions=left_pos, orientations=left_quat, convention="world")
         self._right_wrist_camera.set_world_poses(positions=right_pos, orientations=right_quat, convention="world")
         self._waist_camera.set_world_poses(positions=waist_pos, orientations=waist_quat, convention="world")
-        marker_pos = torch.cat([head_pos, waist_pos, left_pos, right_pos], dim=0)
-        marker_quat = torch.cat([head_quat, waist_quat, left_quat, right_quat], dim=0)
-        self._camera_body_markers.visualize(translations=marker_pos, orientations=marker_quat)
+        self._camera_body_markers.visualize(translations=head_pos, orientations=head_quat)
 
     def _pre_physics_step(self, actions: torch.Tensor) -> None:
         self._raw_action = actions.clone().clamp(-1.0, 1.0)

@@ -397,13 +397,13 @@ def main() -> None:
             delta_scale=ARM_ACTION_DELTA_SCALE,
             ik_lambda=args.ik_lambda,
         )
-        markers = _build_target_markers()
+        # markers = _build_target_markers()
         disk_marker = _build_disk_marker()
-        marker_quats = torch.tensor(
-            [[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]],
-            dtype=torch.float32,
-            device=env.device,
-        )
+        # marker_quats = torch.tensor(
+        #     [[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]],
+        #     dtype=torch.float32,
+        #     device=env.device,
+        # )
         disk_marker_quat = torch.tensor([[1.0, 0.0, 0.0, 0.0]], dtype=torch.float32, device=env.device)
 
         joint_names = env._robot.joint_names
@@ -452,7 +452,7 @@ def main() -> None:
             left_target = torch.as_tensor(left_target_np, dtype=torch.float32, device=env.device).view(1, 3)
             right_target = torch.as_tensor(right_target_np, dtype=torch.float32, device=env.device).view(1, 3)
             disk_center = torch.as_tensor(disk_center_np, dtype=torch.float32, device=env.device).view(1, 3)
-            markers.visualize(translations=torch.cat([left_target, right_target], dim=0), orientations=marker_quats)
+            # markers.visualize(translations=torch.cat([left_target, right_target], dim=0), orientations=marker_quats)
             disk_marker.visualize(translations=disk_center, orientations=disk_marker_quat)
 
             print(
