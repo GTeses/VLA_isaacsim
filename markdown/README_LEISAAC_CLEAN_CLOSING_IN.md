@@ -5,7 +5,7 @@
 - `run_robot_only_closing_in.py` 这条“干净聚拢版”控制脚本，如何重新接回 LeIsaac 风格的数据采集链
 - 哪些文件在起作用
 - 采集数据的每一个环节分别在哪个文件/函数里完成
-- 怎么启动、怎么采集、怎么转成 LeRobot
+- 怎么启动、怎么采集、怎么检查 HDF5、怎么回放、怎么转成 LeRobot
 
 这份说明只针对当前干净聚拢版，不针对旧的 `collect_closing_in_data.py` 复杂分支。
 
@@ -74,7 +74,28 @@
 - 可选只保留成功 episode
 - 可选 push 到 hub
 
-### 2.4 机器人环境本体
+### 2.4 HDF5 结构查看脚本
+
+- [hdf5.py](/home/mark/zhishu_dualarm_lab/scripts/hdf5.py)
+
+作用：
+
+- 打印 HDF5 结构
+- 看 `/data/demo_*` 下面都有什么
+- 查看 dataset 的 shape / dtype / attrs
+- 按 episode 和 step 导出三路图像为 PNG
+
+### 2.5 HDF5 回放脚本
+
+- [replay.py](/home/mark/zhishu_dualarm_lab/scripts/replay.py)
+
+作用：
+
+- 在 Isaac GUI 里回放已采集的干净聚拢 HDF5
+- 重新显示左右目标 marker 和圆盘 marker
+- 用录下来的 70 维 `state` 直接驱动机器人可视化
+
+### 2.6 机器人环境本体
 
 - [env.py](/home/mark/zhishu_dualarm_lab/source/zhishu_dualarm_lab/tasks/robot_only/env.py)
 - [env_cfg.py](/home/mark/zhishu_dualarm_lab/source/zhishu_dualarm_lab/tasks/robot_only/env_cfg.py)
@@ -308,6 +329,43 @@
 - 逐帧调用 `dataset.add_frame(...)`
 - 每条 episode 调 `dataset.save_episode(...)`
 
+### 4.9 查看 HDF5 结构
+
+文件：
+
+- [hdf5.py](/home/mark/zhishu_dualarm_lab/scripts/hdf5.py)
+
+函数：
+
+- `main()`
+- `_walk_group(...)`
+- `_save_episode_images(...)`
+
+这里做：
+
+- 打开指定 HDF5
+- 打印 group / dataset 结构
+- 打印 episode 摘要
+- 可选按 `episode_indices` 和 `step_idx` 导出 PNG
+
+### 4.10 回放已采集 HDF5
+
+文件：
+
+- [replay.py](/home/mark/zhishu_dualarm_lab/scripts/replay.py)
+
+函数：
+
+- `main()`
+- `_restore_robot_state_from_policy_state(...)`
+
+这里做：
+
+- 读取已采集的 clean closing-in HDF5
+- 恢复每步记录下来的机器人 joint state
+- 在 Isaac GUI 里逐步可视化回放
+- 同时重新显示左右目标和圆盘 marker
+
 ---
 
 ## 5. 当前 HDF5 里写了什么
@@ -377,6 +435,8 @@
 ### 6.3 数据采集相关
 
 - `--dataset_file`
+- `--dataset_dir`
+- `--dataset_name`
 - `--resume`
 - `--task_prompt`
 
@@ -440,9 +500,107 @@ python -u scripts/run_robot_only_closing_in.py \
   --resume
 ```
 
+### 8.3 直接写到外置 SSD
+
+```bash
+python -u scripts/run_robot_only_closing_in.py \
+  --enable_cameras \
+  --num_rounds 20 \
+  --max_steps_per_round 180 \
+  --dataset_dir /media/mark/SSD \
+  --dataset_name robot_only_closing_in_v0.hdf5
+```
+
+### 8.4 直接写到指定完整路径
+
+```bash
+python -u scripts/run_robot_only_closing_in.py \
+  --enable_cameras \
+  --num_rounds 20 \
+  --max_steps_per_round 180 \
+  --dataset_file /media/mark/SSD/robot_only_closing_in_v0.hdf5
+```
+
 ---
 
-## 9. 转成 LeRobot 的命令
+## 9. 检查 HDF5 与导出图像的命令
+
+### 9.1 只看 HDF5 结构
+
+```bash
+source /home/mark/miniconda3/etc/profile.d/conda.sh
+conda activate isaaclab-5.1
+cd /home/mark/zhishu_dualarm_lab
+python -u scripts/hdf5.py /绝对路径/你的数据集.hdf5
+```
+
+### 9.2 看结构并打印小数组预览
+
+```bash
+python -u scripts/hdf5.py /绝对路径/你的数据集.hdf5 --preview_arrays
+```
+
+### 9.3 导出某个 episode 的某一步三路图片
+
+```bash
+python -u scripts/hdf5.py /绝对路径/你的数据集.hdf5 \
+  --episode_indices 3 \
+  --step_idx 20 \
+  --save_images_dir /home/mark/zhishu_dualarm_lab/tmp/hdf5_images
+```
+
+### 9.4 导出某个 episode 的全部 step 图片
+
+```bash
+python -u scripts/hdf5.py /绝对路径/你的数据集.hdf5 \
+  --episode_indices 2 \
+  --save_images_dir /home/mark/zhishu_dualarm_lab/tmp/hdf5_images
+```
+
+### 9.5 导出多个 episode 的图片
+
+```bash
+python -u scripts/hdf5.py /绝对路径/你的数据集.hdf5 \
+  --episode_indices 0 3 7 \
+  --save_images_dir /home/mark/zhishu_dualarm_lab/tmp/hdf5_images
+```
+
+---
+
+## 10. HDF5 回放命令
+
+### 10.1 回放整个 HDF5
+
+```bash
+source /home/mark/miniconda3/etc/profile.d/conda.sh
+conda activate isaaclab-5.1
+cd /home/mark/zhishu_dualarm_lab
+python -u scripts/replay.py \
+  --enable_cameras \
+  --dataset_file /绝对路径/你的数据集.hdf5
+```
+
+### 10.2 只回放指定 episode
+
+```bash
+python -u scripts/replay.py \
+  --enable_cameras \
+  --dataset_file /绝对路径/你的数据集.hdf5 \
+  --select_episodes 0 3 7
+```
+
+### 10.3 调整回放速度
+
+```bash
+python -u scripts/replay.py \
+  --enable_cameras \
+  --dataset_file /绝对路径/你的数据集.hdf5 \
+  --step_hz 10
+```
+
+---
+
+## 11. 转成 LeRobot 的命令
 
 ```bash
 source /home/mark/miniconda3/etc/profile.d/conda.sh
@@ -466,7 +624,7 @@ python -u scripts/convert_robot_only_closing_in_to_lerobot.py \
 
 ---
 
-## 10. LeIsaac 框架在这里到底“起了什么作用”
+## 12. LeIsaac 框架在这里到底“起了什么作用”
 
 更准确地说，这里不是把 `主脚本` 变成“运行在 LeIsaac runtime 里”，而是把它接回了 **LeIsaac 风格的数据组织链**：
 
@@ -488,7 +646,7 @@ python -u scripts/convert_robot_only_closing_in_to_lerobot.py \
 
 ---
 
-## 11. 当前还没有做什么
+## 13. 当前还没有做什么
 
 当前这条链路已经有：
 
@@ -499,7 +657,6 @@ python -u scripts/convert_robot_only_closing_in_to_lerobot.py \
 
 当前还没有额外做：
 
-- 专门的 HDF5 replay 脚本
 - 更复杂的 success filtering / curriculum
 - 把圆盘做成真正 scene 资产并参与物理交互
 
