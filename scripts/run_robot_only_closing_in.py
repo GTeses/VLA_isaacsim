@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import math
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -42,6 +43,57 @@ DISK_RADIUS_M = 0.5 * DISK_DIAMETER_M
 LEFT_HAND_JOINT5_BIAS_DEG = -1150.0
 RIGHT_HAND_JOINT5_BIAS_DEG = 1150.0
 JOINT5_BIAS_SOFTNESS = 0.01
+
+
+def _augment_policy_state(
+    state: np.ndarray,
+    *,
+    disk_center: np.ndarray,
+    target_center: np.ndarray,
+) -> np.ndarray:
+    """Patch the fixed 70D state with clean closing-in task geometry.
+
+    `robot_only` 环境本身不认识共同目标体，因此它吐出来的 object/target pose
+    段默认是零。为了让后续 LeIsaac 风格采集与回放/转换链路携带真实任务语义，
+    这里在 recorder 层最小侵入地把：
+    - object_pose  写成圆盘位姿
+    - target_pose  写成共同目标体中心位姿
+    """
+
+    state = np.asarray(state, dtype=np.float32).copy()
+    if state.shape[0] != 70:
+        raise ValueError(f"Expected 70D policy state, got {state.shape}")
+    state[56:63] = np.asarray(
+        [disk_center[0], disk_center[1], disk_center[2], 1.0, 0.0, 0.0, 0.0],
+        dtype=np.float32,
+    )
+    state[63:70] = np.asarray(
+        [target_center[0], target_center[1], target_center[2], 1.0, 0.0, 0.0, 0.0],
+        dtype=np.float32,
+    )
+    return state
+
+
+def _capture_policy_frame(
+    env,
+    *,
+    disk_center: np.ndarray,
+    target_center: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Read one post-step frame from the env and patch in clean closing-in task geometry."""
+
+    policy_input = env.get_policy_input()
+    return {
+        "observation/external_image": np.asarray(policy_input["observation/external_image"], dtype=np.uint8),
+        "observation/left_wrist_image": np.asarray(policy_input["observation/left_wrist_image"], dtype=np.uint8),
+        "observation/right_wrist_image": np.asarray(policy_input["observation/right_wrist_image"], dtype=np.uint8),
+        "observation/state": _augment_policy_state(
+            np.asarray(policy_input["observation/state"], dtype=np.float32),
+            disk_center=disk_center,
+            target_center=target_center,
+        ),
+        "prompt": str(policy_input["prompt"]),
+    }
 
 
 def _clip_xyz_step(err: torch.Tensor, max_norm: float) -> torch.Tensor:
@@ -352,10 +404,13 @@ def main() -> None:
     parser.add_argument("--min_separation_from_start", type=float, default=0.08, help="Minimum move distance for each TCP from its current start.")
     parser.add_argument("--target_sample_attempts", type=int, default=64)
     parser.add_argument("--log_every", type=int, default=10)
+    parser.add_argument("--dataset_file", type=Path, help="Optional LeIsaac-style HDF5 output path.")
+    parser.add_argument("--resume", action="store_true", help="Append episodes to an existing HDF5 file.")
+    parser.add_argument("--task_prompt", default="bring both arms in toward a shared tabletop disk from two sides")
     AppLauncher.add_app_launcher_args(parser)
     args = parser.parse_args()
     if args.num_envs != 1:
-        raise ValueError("run_robot_only_closing_in_v2.py currently supports --num_envs 1 only.")
+        raise ValueError("run_robot_only_closing_in.py currently supports --num_envs 1 only.")
     if hasattr(args, "enable_cameras"):
         args.enable_cameras = True
 
@@ -363,6 +418,7 @@ def main() -> None:
     simulation_app = app_launcher.app
 
     env = None
+    dataset_handle = None
     try:
         print("[INFO] importing robot-only task modules...", flush=True)
         from zhishu_dualarm_lab.tasks.robot_only.constants import (
@@ -374,6 +430,12 @@ def main() -> None:
         )
         from zhishu_dualarm_lab.tasks.robot_only.env import ZhishuDualArmRobotOnlyEnv
         from zhishu_dualarm_lab.tasks.robot_only.env_cfg import ZhishuDualArmRobotOnlyEnvCfg
+        from zhishu_dualarm_lab.utils.robot_only_closing_in_dataset import (
+            RobotOnlyClosingInEpisodeSpec,
+            TASK_NAME,
+            create_or_open_dataset,
+            write_episode,
+        )
 
         print("[INFO] creating robot-only environment...", flush=True)
         rng = np.random.default_rng(args.seed)
@@ -397,13 +459,13 @@ def main() -> None:
             delta_scale=ARM_ACTION_DELTA_SCALE,
             ik_lambda=args.ik_lambda,
         )
-        markers = _build_target_markers()
+        # markers = _build_target_markers()
         disk_marker = _build_disk_marker()
-        marker_quats = torch.tensor(
-            [[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]],
-            dtype=torch.float32,
-            device=env.device,
-        )
+        # marker_quats = torch.tensor(
+        #     [[1.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]],
+        #     dtype=torch.float32,
+        #     device=env.device,
+        # )
         disk_marker_quat = torch.tensor([[1.0, 0.0, 0.0, 0.0]], dtype=torch.float32, device=env.device)
 
         joint_names = env._robot.joint_names
@@ -411,7 +473,7 @@ def main() -> None:
         left_action_joint_names = [joint_names[joint_id] for joint_id in ik.left_joint_ids]
         right_action_joint_names = [joint_names[joint_id] for joint_id in ik.right_joint_ids]
         print(
-            "[INFO] v2 joint mapping "
+            "[INFO] main joint mapping "
             f"env_action_order={env_action_joint_names} "
             f"left_arm_order={left_action_joint_names} "
             f"right_arm_order={right_action_joint_names}",
@@ -430,6 +492,14 @@ def main() -> None:
             f"softness={JOINT5_BIAS_SOFTNESS:.2f}",
             flush=True,
         )
+        data_group = None
+        if args.dataset_file is not None:
+            dataset_handle, data_group = create_or_open_dataset(args.dataset_file, resume=args.resume)
+            print(
+                f"[INFO] collecting {TASK_NAME} to {dataset_handle.filename} "
+                f"episodes={args.num_rounds} max_steps={args.max_steps_per_round}",
+                flush=True,
+            )
 
         for round_idx in range(args.num_rounds):
             env.reset()
@@ -452,7 +522,7 @@ def main() -> None:
             left_target = torch.as_tensor(left_target_np, dtype=torch.float32, device=env.device).view(1, 3)
             right_target = torch.as_tensor(right_target_np, dtype=torch.float32, device=env.device).view(1, 3)
             disk_center = torch.as_tensor(disk_center_np, dtype=torch.float32, device=env.device).view(1, 3)
-            markers.visualize(translations=torch.cat([left_target, right_target], dim=0), orientations=marker_quats)
+            # markers.visualize(translations=torch.cat([left_target, right_target], dim=0), orientations=marker_quats)
             disk_marker.visualize(translations=disk_center, orientations=disk_marker_quat)
 
             print(
@@ -470,6 +540,12 @@ def main() -> None:
             right_hold = 0
             left_done = False
             right_done = False
+            episode_actions: list[np.ndarray] = []
+            episode_states: list[np.ndarray] = []
+            episode_external: list[np.ndarray] = []
+            episode_left_wrist: list[np.ndarray] = []
+            episode_right_wrist: list[np.ndarray] = []
+            round_start_time = time.perf_counter()
             for step_idx in range(args.max_steps_per_round):
                 action = ik.infer(
                     left_target=left_target,
@@ -481,6 +557,12 @@ def main() -> None:
                 if right_done:
                     action[:, ik.right_action_indices] = 0.0
                 env.step(action)
+                frame = _capture_policy_frame(env, disk_center=disk_center_np, target_center=center_np)
+                episode_actions.append(action[0].detach().cpu().numpy().astype(np.float32))
+                episode_states.append(frame["observation/state"])
+                episode_external.append(frame["observation/external_image"])
+                episode_left_wrist.append(frame["observation/left_wrist_image"])
+                episode_right_wrist.append(frame["observation/right_wrist_image"])
                 left_now, right_now = _tcp_pos(env)
                 left_dist = float(np.linalg.norm(left_now - left_target_np))
                 right_dist = float(np.linalg.norm(right_now - right_target_np))
@@ -504,8 +586,62 @@ def main() -> None:
             else:
                 print(f"[WARN] round={round_idx} timeout: left_done={left_done} right_done={right_done}.")
 
+            round_success = left_done and right_done
+            if data_group is not None and episode_actions:
+                spec = RobotOnlyClosingInEpisodeSpec(
+                    episode_index=round_idx,
+                    prompt=args.task_prompt,
+                    gap_m=float(gap),
+                    left_target=left_target_np.astype(np.float32),
+                    right_target=right_target_np.astype(np.float32),
+                    center_target=center_np.astype(np.float32),
+                    disk_center=disk_center_np.astype(np.float32),
+                )
+                payload = {
+                    "observation": {
+                        "state": np.asarray(episode_states, dtype=np.float32),
+                        "external_image": np.asarray(episode_external, dtype=np.uint8),
+                        "left_wrist_image": np.asarray(episode_left_wrist, dtype=np.uint8),
+                        "right_wrist_image": np.asarray(episode_right_wrist, dtype=np.uint8),
+                    },
+                    "actions": np.asarray(episode_actions, dtype=np.float32),
+                    "task": {
+                        "prompt": args.task_prompt,
+                        "left_target": left_target_np.astype(np.float32),
+                        "right_target": right_target_np.astype(np.float32),
+                        "center_target": center_np.astype(np.float32),
+                        "disk_center": disk_center_np.astype(np.float32),
+                        "target_gap_m": np.asarray(gap, dtype=np.float32),
+                    },
+                    "metrics": {
+                        "duration_s": np.asarray(time.perf_counter() - round_start_time, dtype=np.float32),
+                        "left_done": np.asarray(left_done, dtype=np.bool_),
+                        "right_done": np.asarray(right_done, dtype=np.bool_),
+                        "final_left_dist": np.asarray(left_dist, dtype=np.float32),
+                        "final_right_dist": np.asarray(right_dist, dtype=np.float32),
+                    },
+                }
+                episode_name = write_episode(
+                    data_group,
+                    spec=spec,
+                    payload=payload,
+                    success=round_success,
+                    num_samples=len(episode_actions),
+                )
+                print(
+                    f"[INFO] {episode_name} "
+                    f"steps={len(episode_actions)} success={round_success} "
+                    f"gap={gap:.3f} left_final={left_dist:.4f} right_final={right_dist:.4f}",
+                    flush=True,
+                )
+
         env.close()
     finally:
+        if dataset_handle is not None:
+            try:
+                dataset_handle.close()
+            except Exception:
+                pass
         if env is not None:
             try:
                 env.close()

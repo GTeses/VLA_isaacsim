@@ -2,7 +2,7 @@
 
 这份文档专门说明：
 
-- `run_robot_only_closing_in_v2.py` 这条“干净聚拢版”控制脚本，如何重新接回 LeIsaac 风格的数据采集链
+- `run_robot_only_closing_in.py` 这条“干净聚拢版”控制脚本，如何重新接回 LeIsaac 风格的数据采集链
 - 哪些文件在起作用
 - 采集数据的每一个环节分别在哪个文件/函数里完成
 - 怎么启动、怎么采集、怎么转成 LeRobot
@@ -22,7 +22,7 @@
 也就是说：
 
 - IK、reset、目标采样、共同目标体、圆盘可视化
-  都在 `run_robot_only_closing_in_v2.py` 里
+  都在 `run_robot_only_closing_in.py` 里
 - HDF5 schema、episode 写盘、LeRobot 转换
   都在单独的工具模块和 converter 里
 
@@ -34,7 +34,7 @@
 
 ### 2.1 任务与控制主入口
 
-- [run_robot_only_closing_in_v2.py](/home/mark/zhishu_dualarm_lab/scripts/run_robot_only_closing_in_v2.py)
+- [run_robot_only_closing_in.py](/home/mark/zhishu_dualarm_lab/scripts/run_robot_only_closing_in.py)
 
 作用：
 
@@ -94,7 +94,7 @@
 
 ## 3. LeIsaac 风格数据链是怎么接进来的
 
-### 3.1 控制层仍然完全留在 v2 里
+### 3.1 控制层仍然完全留在 主脚本 里
 
 核心原则：
 
@@ -108,9 +108,9 @@
 - dataset organizer
 - converter
 
-### 3.2 `v2` 在每一步执行后抓一帧
+### 3.2 `主脚本` 在每一步执行后抓一帧
 
-`run_robot_only_closing_in_v2.py` 里新增了：
+`run_robot_only_closing_in.py` 里新增了：
 
 - `_capture_policy_frame(...)`
 - `_augment_policy_state(...)`
@@ -138,7 +138,7 @@
 
 ### 3.3 episode 结束后统一写 HDF5
 
-在 `main()` 的每一轮里，`v2` 会缓存：
+在 `main()` 的每一轮里，`主脚本` 会缓存：
 
 - `episode_actions`
 - `episode_states`
@@ -167,7 +167,7 @@
 
 文件：
 
-- [run_robot_only_closing_in_v2.py](/home/mark/zhishu_dualarm_lab/scripts/run_robot_only_closing_in_v2.py)
+- [run_robot_only_closing_in.py](/home/mark/zhishu_dualarm_lab/scripts/run_robot_only_closing_in.py)
 
 函数：
 
@@ -202,7 +202,7 @@
 
 文件：
 
-- [run_robot_only_closing_in_v2.py](/home/mark/zhishu_dualarm_lab/scripts/run_robot_only_closing_in_v2.py)
+- [run_robot_only_closing_in.py](/home/mark/zhishu_dualarm_lab/scripts/run_robot_only_closing_in.py)
 
 函数：
 
@@ -223,7 +223,7 @@
 
 文件：
 
-- [run_robot_only_closing_in_v2.py](/home/mark/zhishu_dualarm_lab/scripts/run_robot_only_closing_in_v2.py)
+- [run_robot_only_closing_in.py](/home/mark/zhishu_dualarm_lab/scripts/run_robot_only_closing_in.py)
 
 类 / 函数：
 
@@ -260,7 +260,7 @@
 
 文件：
 
-- [run_robot_only_closing_in_v2.py](/home/mark/zhishu_dualarm_lab/scripts/run_robot_only_closing_in_v2.py)
+- [run_robot_only_closing_in.py](/home/mark/zhishu_dualarm_lab/scripts/run_robot_only_closing_in.py)
 
 函数：
 
@@ -356,7 +356,7 @@
 
 当前主要参数都在：
 
-- [run_robot_only_closing_in_v2.py](/home/mark/zhishu_dualarm_lab/scripts/run_robot_only_closing_in_v2.py)
+- [run_robot_only_closing_in.py](/home/mark/zhishu_dualarm_lab/scripts/run_robot_only_closing_in.py)
 
 ### 6.1 动作相关
 
@@ -398,13 +398,13 @@ conda activate isaaclab-5.1
 which python
 python -c "import isaaclab, isaacsim; print('ok')"
 cd /home/mark/zhishu_dualarm_lab
-python -u scripts/run_robot_only_closing_in_v2.py --enable_cameras
+python -u scripts/run_robot_only_closing_in.py --enable_cameras
 ```
 
 ### 7.2 少量 GUI 调试
 
 ```bash
-python -u scripts/run_robot_only_closing_in_v2.py \
+python -u scripts/run_robot_only_closing_in.py \
   --enable_cameras \
   --num_rounds 5 \
   --max_steps_per_round 180
@@ -422,7 +422,7 @@ conda activate isaaclab-5.1
 which python
 python -c "import isaaclab, isaacsim; print('ok')"
 cd /home/mark/zhishu_dualarm_lab
-python -u scripts/run_robot_only_closing_in_v2.py \
+python -u scripts/run_robot_only_closing_in.py \
   --enable_cameras \
   --num_rounds 20 \
   --max_steps_per_round 180 \
@@ -432,7 +432,7 @@ python -u scripts/run_robot_only_closing_in_v2.py \
 ### 8.2 继续往已有 HDF5 追加
 
 ```bash
-python -u scripts/run_robot_only_closing_in_v2.py \
+python -u scripts/run_robot_only_closing_in.py \
   --enable_cameras \
   --num_rounds 20 \
   --max_steps_per_round 180 \
@@ -468,7 +468,7 @@ python -u scripts/convert_robot_only_closing_in_to_lerobot.py \
 
 ## 10. LeIsaac 框架在这里到底“起了什么作用”
 
-更准确地说，这里不是把 `v2` 变成“运行在 LeIsaac runtime 里”，而是把它接回了 **LeIsaac 风格的数据组织链**：
+更准确地说，这里不是把 `主脚本` 变成“运行在 LeIsaac runtime 里”，而是把它接回了 **LeIsaac 风格的数据组织链**：
 
 - 有统一的 episode 结构
 - 有统一的 HDF5 根组 `/data`

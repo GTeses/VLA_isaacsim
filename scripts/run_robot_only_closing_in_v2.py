@@ -160,6 +160,8 @@ def _disk_center_from_target_body(center: np.ndarray, forward_axis_xy: np.ndarra
     disk_center = center.copy()
     disk_center[0] += float(forward_axis_xy[0] * disk_forward_offset)
     disk_center[1] += float(forward_axis_xy[1] * disk_forward_offset)
+    # 让圆盘整体在保持原有相切关系的同时，沿竖直方向上移 15mm。
+    disk_center[2] += 0.015
     return disk_center.astype(np.float32)
 
 

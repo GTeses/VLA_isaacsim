@@ -66,4 +66,4 @@ python3 scripts/run_robot_only_random_targets.py --headless \
     --target_max_move 0.12 \
     --success_threshold 0.02
 
-python -u scripts/run_robot_only_closing_in_v2.py --enable_cameras
+python -u scripts/run_robot_only_closing_in.py --enable_cameras
