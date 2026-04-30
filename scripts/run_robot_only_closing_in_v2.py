@@ -43,6 +43,7 @@ DISK_RADIUS_M = 0.5 * DISK_DIAMETER_M
 LEFT_HAND_JOINT5_BIAS_DEG = -1150.0
 RIGHT_HAND_JOINT5_BIAS_DEG = 1150.0
 JOINT5_BIAS_SOFTNESS = 0.01
+DEFAULT_DATASET_DIR = Path(__file__).resolve().parents[1] / "data" / "hdf5"
 
 
 def _augment_policy_state(
@@ -406,7 +407,17 @@ def main() -> None:
     parser.add_argument("--min_separation_from_start", type=float, default=0.08, help="Minimum move distance for each TCP from its current start.")
     parser.add_argument("--target_sample_attempts", type=int, default=64)
     parser.add_argument("--log_every", type=int, default=10)
-    parser.add_argument("--dataset_file", type=Path, help="Optional LeIsaac-style HDF5 output path.")
+    parser.add_argument("--dataset_file", type=Path, help="Optional full HDF5 output path. Overrides --dataset_dir/--dataset_name.")
+    parser.add_argument(
+        "--dataset_dir",
+        type=Path,
+        help=f"Optional HDF5 output directory. If set without --dataset_file, saves to <dataset_dir>/<dataset_name>. Recommended repo default: {DEFAULT_DATASET_DIR}",
+    )
+    parser.add_argument(
+        "--dataset_name",
+        default="robot_only_closing_in_v0.hdf5",
+        help="Default HDF5 filename used together with --dataset_dir.",
+    )
     parser.add_argument("--resume", action="store_true", help="Append episodes to an existing HDF5 file.")
     parser.add_argument("--task_prompt", default="bring both arms in toward a shared tabletop disk from two sides")
     AppLauncher.add_app_launcher_args(parser)
@@ -421,6 +432,9 @@ def main() -> None:
 
     env = None
     dataset_handle = None
+    dataset_path = args.dataset_file
+    if dataset_path is None and args.dataset_dir is not None:
+        dataset_path = Path(args.dataset_dir) / args.dataset_name
     try:
         print("[INFO] importing robot-only task modules...", flush=True)
         from zhishu_dualarm_lab.tasks.robot_only.constants import (
@@ -495,8 +509,8 @@ def main() -> None:
             flush=True,
         )
         data_group = None
-        if args.dataset_file is not None:
-            dataset_handle, data_group = create_or_open_dataset(args.dataset_file, resume=args.resume)
+        if dataset_path is not None:
+            dataset_handle, data_group = create_or_open_dataset(dataset_path, resume=args.resume)
             print(
                 f"[INFO] collecting {TASK_NAME} to {dataset_handle.filename} "
                 f"episodes={args.num_rounds} max_steps={args.max_steps_per_round}",
