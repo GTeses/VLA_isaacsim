@@ -160,6 +160,8 @@ def _disk_center_from_target_body(center: np.ndarray, forward_axis_xy: np.ndarra
     disk_center = center.copy()
     disk_center[0] += float(forward_axis_xy[0] * disk_forward_offset)
     disk_center[1] += float(forward_axis_xy[1] * disk_forward_offset)
+    # 让圆盘整体在保持原有相切关系的同时，沿竖直方向上移 15mm。
+    disk_center[2] += 0.015
     return disk_center.astype(np.float32)
 
 
@@ -410,7 +412,7 @@ def main() -> None:
     AppLauncher.add_app_launcher_args(parser)
     args = parser.parse_args()
     if args.num_envs != 1:
-        raise ValueError("run_robot_only_closing_in.py currently supports --num_envs 1 only.")
+        raise ValueError("run_robot_only_closing_in_v2.py currently supports --num_envs 1 only.")
     if hasattr(args, "enable_cameras"):
         args.enable_cameras = True
 
@@ -473,7 +475,7 @@ def main() -> None:
         left_action_joint_names = [joint_names[joint_id] for joint_id in ik.left_joint_ids]
         right_action_joint_names = [joint_names[joint_id] for joint_id in ik.right_joint_ids]
         print(
-            "[INFO] main joint mapping "
+            "[INFO] v2 joint mapping "
             f"env_action_order={env_action_joint_names} "
             f"left_arm_order={left_action_joint_names} "
             f"right_arm_order={right_action_joint_names}",

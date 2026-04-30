@@ -89,7 +89,8 @@ D405_FAR_CLIP = 5.0
 # HEAD_CAMERA_OFFSET_POS = (-0.12, 0.0, 0.11)
 # HEAD_CAMERA_OFFSET_ROT = (0.0, -0.3007058, 0.0, 0.95371695)
 HEAD_CAMERA_OFFSET_POS = (-0.4, 0.0, 0.6)
-HEAD_CAMERA_OFFSET_ROT = (0.5, -0.5, 0.5, 0.5)
+#HEAD_CAMERA_OFFSET_ROT = (0.5, -0.5, 0.5, 0.5)
+HEAD_CAMERA_OFFSET_ROT = (0.70710678, 0.0, 0.70710678, 0.0)
 
 # Keep an additional waist camera in the scene for future use even though it
 # is not part of the current policy observation contract.
