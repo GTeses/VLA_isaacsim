@@ -15,16 +15,19 @@ SOURCE_ROOT = Path(__file__).resolve().parents[1] / "source"
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
-try:
-    from lerobot.common.datasets.lerobot_dataset import LEROBOT_HOME
-    from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
-except ImportError as exc:  # pragma: no cover - runtime dependency guard
-    raise SystemExit("LeRobot is required for this converter. Install it before running this script.") from exc
-
 from zhishu_dualarm_lab.utils.robot_only_closing_in_dataset import ACTION_NAMES, ROOT_GROUP
 
 
-def _create_dataset(repo_id: str, *, fps: int, image_shape: tuple[int, int, int], state_dim: int) -> LeRobotDataset:
+def _create_dataset(
+    repo_id: str,
+    *,
+    fps: int,
+    image_shape: tuple[int, int, int],
+    state_dim: int,
+    lerobot_home: Path,
+    lerobot_dataset_cls,
+    lerobot_module,
+):
     features = {
         "observation.state": {
             "dtype": "float32",
@@ -53,11 +56,15 @@ def _create_dataset(repo_id: str, *, fps: int, image_shape: tuple[int, int, int]
         },
     }
 
-    output_dir = LEROBOT_HOME / repo_id
+    # 让 LeRobot 从一开始就把数据集落到用户指定的根目录，而不是先写 /home 再搬走。
+    lerobot_home = Path(lerobot_home).expanduser().resolve()
+    lerobot_home.mkdir(parents=True, exist_ok=True)
+    lerobot_module.LEROBOT_HOME = lerobot_home
+    output_dir = lerobot_home / repo_id
     if output_dir.exists():
         shutil.rmtree(output_dir)
 
-    return LeRobotDataset.create(
+    return lerobot_dataset_cls.create(
         repo_id=repo_id,
         fps=fps,
         robot_type="zhishu_dualarm_nohand",
@@ -69,6 +76,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset_file", type=Path, required=True, help="Robot-only closing-in HDF5 file.")
     parser.add_argument("--repo_id", required=True, help="Target LeRobot dataset repo id.")
+    parser.add_argument(
+        "--output_dir",
+        type=Path,
+        help="Optional local LeRobot root directory. If set, the converted dataset is created directly under <output_dir>/<repo_id>.",
+    )
     parser.add_argument("--fps", type=int, default=10)
     parser.add_argument("--successful_only", action="store_true", help="Skip failed episodes.")
     parser.add_argument("--skip_initial_frames", type=int, default=0)
@@ -76,6 +88,18 @@ def main() -> None:
     parser.add_argument("--private", action="store_true")
     parser.add_argument("--license", default="apache-2.0")
     args = parser.parse_args()
+
+    try:
+        import lerobot.common.datasets.lerobot_dataset as lerobot_dataset_module
+        from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+    except ImportError as exc:  # pragma: no cover - runtime dependency guard
+        raise SystemExit("LeRobot is required for this converter. Install it in the current environment before running this script.") from exc
+
+    lerobot_home = (
+        Path(args.output_dir).expanduser().resolve()
+        if args.output_dir is not None
+        else Path(lerobot_dataset_module.LEROBOT_HOME).expanduser().resolve()
+    )
 
     dataset_path = args.dataset_file if args.dataset_file.suffix == ".hdf5" else args.dataset_file.with_suffix(".hdf5")
     with h5py.File(dataset_path, "r") as handle:
@@ -89,7 +113,15 @@ def main() -> None:
         images = np.asarray(sample_episode["observation"]["external_image"], dtype=np.uint8)
         state_dim = int(state.shape[1])
         image_shape = tuple(images.shape[1:])
-        dataset = _create_dataset(args.repo_id, fps=args.fps, image_shape=image_shape, state_dim=state_dim)
+        dataset = _create_dataset(
+            args.repo_id,
+            fps=args.fps,
+            image_shape=image_shape,
+            state_dim=state_dim,
+            lerobot_home=lerobot_home,
+            lerobot_dataset_cls=LeRobotDataset,
+            lerobot_module=lerobot_dataset_module,
+        )
 
         saved_count = 0
         for episode_name in episode_names:
@@ -128,7 +160,7 @@ def main() -> None:
                 license=args.license,
             )
 
-    print(f"[INFO] converted {saved_count} episodes into {args.repo_id}")
+    print(f"[INFO] converted {saved_count} episodes into {args.repo_id} under {lerobot_home / args.repo_id}")
 
 
 if __name__ == "__main__":
